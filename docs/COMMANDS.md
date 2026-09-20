@@ -32,6 +32,30 @@ Check it took:
 python3 -c "import weaver_core, weaver_store, weaver_proxy; print('ok')"
 ```
 
+### If that import fails
+
+```bash
+python3 scripts/doctor.py
+```
+
+Almost always the same cause: **`pip` and `python3` are different Pythons.**
+Stacked envs (`(sagar_env) (base)`) or running the script under `bash` while
+your shell is `zsh` can resolve them differently, so the install lands in an
+interpreter your shell never looks at. The setup script's own check passes
+because inside that script they match.
+
+`doctor.py` prints which interpreter is running, where each package resolved
+from, and the exact command to fix it. The fix is to install with the Python
+you actually use:
+
+```bash
+PYTHON="$(command -v python3)" bash scripts/dev-setup.sh
+```
+
+**You are not blocked by this.** `pyproject.toml` sets `pythonpath`, so
+`pytest` and `scripts/replay.py` work whether or not the install succeeded. The
+editable install only matters for importing `weaver_*` from outside the repo.
+
 ---
 
 ## 2. Tests
@@ -292,6 +316,8 @@ git status --short
 | `upstream X failed to start` | bad command in config | check `command`/`args`; the proxy keeps running without it |
 | replay says `FAIL` | no detectors yet | correct until M2 |
 | `pip install -e .` errors | you want the script | `bash scripts/dev-setup.sh` |
+| setup says OK but import fails | `pip` and `python3` are different Pythons | `python3 scripts/doctor.py`, then `PYTHON="$(command -v python3)" bash scripts/dev-setup.sh` |
+| tests pass but imports fail | expected — pytest uses `pythonpath`, not the install | only matters outside the repo |
 
 ---
 
@@ -299,6 +325,7 @@ git status --short
 
 ```bash
 bash scripts/dev-setup.sh                       # install
+python3 scripts/doctor.py                       # diagnose import problems
 pytest                                          # 83 tests
 ruff check packages scripts tests               # lint
 mypy packages/core/weaver_core                  # types

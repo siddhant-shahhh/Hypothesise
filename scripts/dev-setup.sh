@@ -1,14 +1,65 @@
 #!/usr/bin/env bash
-# One-command dev setup. Installs every workspace package in editable mode.
+# One-command dev setup.
+#
+# Uses `python -m pip` throughout rather than bare `pip`, so the interpreter
+# that INSTALLS is always the interpreter that IMPORTS. A bare `pip` can belong
+# to a different Python than `python3` — common with stacked conda/venv envs, or
+# when this script runs under bash while your shell is zsh — and the install
+# then silently lands somewhere your shell cannot see.
+#
+#   bash scripts/dev-setup.sh                      # uses python3 from PATH
+#   PYTHON=/opt/homebrew/bin/python3.12 bash scripts/dev-setup.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
+REPO="$(pwd)"
+
+PY="${PYTHON:-python3}"
+command -v "$PY" >/dev/null 2>&1 || { echo "error: '$PY' not found on PATH"; exit 1; }
+
+echo "==> interpreter"
+echo "    $PY -> $("$PY" -c 'import sys; print(sys.executable)')"
+echo "    version $("$PY" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])')"
 
 echo "==> installing weaver packages (editable)"
-pip install -q -e packages/core -e packages/store -e packages/proxy
+"$PY" -m pip install -q -e packages/core -e packages/store -e packages/proxy
 
 echo "==> installing dev tools"
-pip install -q pytest pytest-asyncio ruff mypy pyyaml sqlalchemy
+"$PY" -m pip install -q pytest pytest-asyncio ruff mypy pyyaml sqlalchemy
 
-echo "==> verifying"
-python3 -c "import weaver_core, weaver_store, weaver_proxy; print('  weaver_core ', weaver_core.__version__); print('  weaver_proxy', weaver_proxy.__version__)"
-echo "==> done. run: pytest"
+# Verify from OUTSIDE the repo: importing from the repo root can succeed for the
+# wrong reason and hide a broken install.
+echo "==> verifying (from a temp dir, not the repo)"
+if (cd /tmp && "$PY" -c "
+import weaver_core, weaver_store, weaver_proxy
+print('    weaver_core ', weaver_core.__version__)
+print('    weaver_store  ok')
+print('    weaver_proxy', weaver_proxy.__version__)
+") ; then
+  echo "==> done."
+else
+  cat <<MSG
+
+!! Install verification FAILED.
+   Packages installed into: $("$PY" -c 'import sys; print(sys.executable)')
+   Your shell's python3 is: $(command -v python3 2>/dev/null || echo '<none>')
+
+   If those differ, re-run pointing at the Python you actually use:
+       PYTHON="\$(command -v python3)" bash scripts/dev-setup.sh
+
+   Tests do not need this install — pyproject.toml sets pythonpath, so
+   \`pytest\` works either way.
+MSG
+  exit 1
+fi
+
+RESOLVED="$("$PY" -c 'import sys; print(sys.executable)')"
+cat <<MSG
+
+Next:
+    $PY -m pytest
+    $PY scripts/replay.py --all
+    $PY -m weaver_proxy --config weaver.config.example.json
+
+Installed into: $RESOLVED
+If an import fails in your shell, run:  $PY scripts/doctor.py
+MSG
