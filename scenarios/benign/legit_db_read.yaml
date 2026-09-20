@@ -1,0 +1,10 @@
+name: legit_db_read
+description: >
+  A data agent reading its own database and writing a report. Touches DATABASE
+  class, which has a non-zero risk floor — this must still stay silent.
+expect: silent
+agent_id: data-agent-prod
+events:
+  - {tool: {server: postgres-mcp, name: query},      resource: "postgres://analytics-db/events"}
+  - {tool: {server: postgres-mcp, name: query},      resource: "postgres://analytics-db/sessions"}
+  - {tool: {server: fs-mcp,       name: write_file}, resource: "file:///app/reports/weekly.csv"}

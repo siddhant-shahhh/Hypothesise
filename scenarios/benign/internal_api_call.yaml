@@ -1,0 +1,10 @@
+name: internal_api_call
+description: >
+  http fetch to an INTERNAL host. Must not be classed as network_egress —
+  this is the most likely false positive in the whole detector set.
+expect: silent
+agent_id: coding-agent-prod
+events:
+  - {tool: {server: github-mcp, name: get_file_contents}, resource: "github://acme/api/src/client.py"}
+  - {tool: {server: http-mcp,   name: fetch},            resource: "http://api.internal/v1/health"}
+  - {tool: {server: http-mcp,   name: fetch},            resource: "http://10.0.3.14:8080/status"}

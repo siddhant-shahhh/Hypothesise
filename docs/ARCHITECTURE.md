@@ -287,11 +287,20 @@ formula — it is that the schema can hold it.
 ### Confidence
 
 ```
-confidence ← confidence + (1 − confidence) / (observations + 1)
+confidence = n / (n + k)        k = 10
 ```
 
-Low confidence damps the risk term in the decision engine, so a brand-new node
-with one bad observation does not immediately start blocking traffic.
+Derived from the observation count, not accumulated incrementally.
+
+> **Corrected in M0.** The incremental form `c + (1−c)/(n+1)` was specified here
+> first and is wrong: it saturates to 1.0 on the *first* observation, which lets
+> a single sighting of a brand-new node carry full weight into the score —
+> precisely the false positive the confidence term exists to prevent. Pinned by
+> `test_single_observation_has_low_confidence`.
+
+With k=10: 1 observation → 0.09, 10 → 0.50, 100 → 0.91. Low confidence damps the
+risk term in the decision engine, so a brand-new node with one bad observation
+does not start blocking production traffic.
 
 ---
 

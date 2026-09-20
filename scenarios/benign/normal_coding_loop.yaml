@@ -1,0 +1,10 @@
+name: normal_coding_loop
+description: The everyday workflow. Must stay silent or the product is uninstallable.
+expect: silent
+agent_id: coding-agent-prod
+events:
+  - {tool: {server: github-mcp, name: get_issue},          resource: "github://acme/api/issues/412"}
+  - {tool: {server: github-mcp, name: get_file_contents},  resource: "github://acme/api/src/handlers.py"}
+  - {tool: {server: fs-mcp,     name: write_file},         resource: "file:///app/src/handlers.py"}
+  - {tool: {server: shell-mcp,  name: exec},               resource: "shell://pytest tests/"}
+  - {tool: {server: github-mcp, name: create_pull_request}, resource: "github://acme/api/pulls"}
