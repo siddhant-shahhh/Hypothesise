@@ -1,6 +1,6 @@
 # AI_Layer — Agent Immune System
 
-> **Working codename:** Weaver · **Status:** M0, scaffolding
+> **Working codename:** Weaver · **Status:** M0 complete · M1 in progress (proxy working, dashboard next)
 
 A behavioural security layer for AI agents. It sits between an agent and the tools
 it calls, learns how that agent normally operates, detects dangerous deviations,
@@ -57,8 +57,21 @@ scenarios/          eval suite — attack/ must fire, benign/ must not
 ## Dev setup
 
 ```bash
-uv sync
+pip install -e ".[dev]"          # or: uv sync
 cp .env.example .env
-pytest
-python scripts/replay.py scenarios/attack/exfil_basic.yaml
+pytest                            # 83 tests
+python3 scripts/replay.py --all   # 16 scenarios
 ```
+
+## Try the proxy
+
+```bash
+PYTHONPATH=packages/core:packages/store:packages/proxy \
+  python3 -m weaver_proxy --config weaver.config.example.json
+```
+
+It speaks MCP on stdio. Point any MCP client at it and every tool call is
+intercepted, classified and emitted — in `observe` mode, so nothing is blocked.
+
+To put it in front of real servers, copy your existing `mcpServers` block into
+`weaver.config.json` and point your agent at Weaver instead.

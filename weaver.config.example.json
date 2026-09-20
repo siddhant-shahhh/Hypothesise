@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "fs-mcp": {
+      "command": "python3",
+      "args": ["tests/fixtures/fake_mcp_server.py", "--name", "fs-mcp"]
+    }
+  },
+  "weaver": {
+    "mode": "observe",
+    "failMode": "open",
+    "budgetMs": 50
+  }
+}

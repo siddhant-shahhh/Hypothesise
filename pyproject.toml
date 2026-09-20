@@ -6,14 +6,16 @@ requires-python = ">=3.10"
 dependencies = ["sqlalchemy>=2.0", "pyyaml>=6.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.11"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11"]
 
 [tool.uv.workspace]
 members = ["packages/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 pythonpath = ["packages/core", "packages/store", "packages/proxy", "packages/api"]
+norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]
 line-length = 100
