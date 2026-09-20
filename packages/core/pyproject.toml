@@ -5,6 +5,12 @@ description = "Weaver detection engine — zero I/O, zero framework deps (ADR-00
 requires-python = ">=3.10"
 dependencies = []
 
+# The engine has no dependencies (ADR-005). The scenario LOADER needs a YAML
+# parser, so it is an extra rather than a hard requirement — nothing in the
+# decision path imports it.
+[project.optional-dependencies]
+scenarios = ["pyyaml>=6.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

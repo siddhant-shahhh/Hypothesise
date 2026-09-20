@@ -5,6 +5,9 @@ description = "Weaver MCP interception layer — the data plane"
 requires-python = ">=3.10"
 dependencies = ["weaver-core", "weaver-store"]
 
+[project.scripts]
+weaver-proxy = "weaver_proxy.__main__:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

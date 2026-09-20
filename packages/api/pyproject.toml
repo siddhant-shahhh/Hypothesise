@@ -3,7 +3,10 @@ name = "weaver-api"
 version = "0.1.0"
 description = "Weaver control plane and dashboard"
 requires-python = ">=3.10"
-dependencies = ["weaver-core", "weaver-store", "fastapi>=0.110", "uvicorn>=0.27"]
+dependencies = ["weaver-core[scenarios]", "weaver-store", "fastapi>=0.110", "uvicorn>=0.27"]
+
+[project.scripts]
+weaver-api = "weaver_api.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

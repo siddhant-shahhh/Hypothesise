@@ -166,7 +166,8 @@ carved out.
 ## Try it
 
 ```bash
-bash scripts/dev-setup.sh
+bash scripts/dev-setup.sh        # creates .venv (PEP 668 makes this mandatory)
+source .venv/bin/activate
 pytest                                   # 135 tests
 python3 scripts/replay.py --all          # the eval suite
 python3 -m weaver_api --demo             # dashboard on :8080

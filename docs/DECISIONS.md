@@ -273,3 +273,35 @@ readonly database".
 
 Neither applies to Postgres, which is one more reason the M5 switch simplifies
 this rather than complicating it.
+
+---
+
+### ADR-014 — Setup creates a virtualenv; `--break-system-packages` is never used
+**Date:** 2026-09-20 · **Status:** accepted
+
+`scripts/dev-setup.sh` creates `.venv` and installs there. If a venv or conda
+env is already active it uses that instead. `--here` forces the active
+interpreter.
+
+*Why:* Homebrew, Debian and Fedora Pythons are marked externally managed under
+PEP 668 and refuse `pip install`. The documented override,
+`--break-system-packages`, can corrupt a Homebrew installation — not a
+reasonable thing for a setup script to do to somebody's machine.
+
+*Why it matters beyond this repo:* ADR-009 makes install the single most
+important thing about this product. Every macOS and Linux user who installs it
+will hit PEP 668. Discovering that on a real machine on day one, rather than in
+M5 on a stranger's, is worth more than the hour it cost.
+
+*Two related bugs fixed alongside:*
+
+- `pyyaml` was used by the scenario loader but declared nowhere, so a clean
+  install crashed on `--demo`. It is now the `weaver-core[scenarios]` extra —
+  the engine keeps its zero-dependency promise (ADR-005) and the component that
+  actually needs a YAML parser asks for one.
+- `httpx` is required by starlette's `TestClient` and was similarly
+  undeclared, so `pytest` failed at collection on a clean install.
+
+Both were invisible until the setup was run against an empty environment. Any
+change to dependencies should be verified the same way:
+`rm -rf .venv && bash scripts/dev-setup.sh && .venv/bin/python -m pytest`.

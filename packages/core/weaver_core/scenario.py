@@ -33,7 +33,15 @@ class Scenario:
 
 
 def load_scenario(path: str | Path, base_ts: datetime | None = None) -> Scenario:
-    import yaml  # local import: keeps weaver_core's hot path dependency-free
+    try:
+        # Local import: the engine's hot path never touches YAML, so this stays
+        # out of weaver_core's hard dependencies (ADR-005).
+        import yaml
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            "Loading scenarios needs a YAML parser, which is an optional extra.\n"
+            "    pip install 'weaver-core[scenarios]'   (or: pip install pyyaml)"
+        ) from exc
 
     p = Path(path)
     raw: dict[str, Any] = yaml.safe_load(p.read_text())

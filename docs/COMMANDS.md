@@ -10,51 +10,72 @@ Run everything from the repo root: `/Volumes/Seagate/AI_Layer`
 ```bash
 cd /Volumes/Seagate/AI_Layer
 bash scripts/dev-setup.sh
+source .venv/bin/activate
 ```
 
-Installs `weaver_core`, `weaver_store` and `weaver_proxy` in editable mode, plus
-dev tools. Editable means your edits take effect immediately — no reinstall.
+The script **creates a virtualenv at `.venv`** and installs everything into it.
 
-Expected output:
+### Why a virtualenv is not optional
+
+Homebrew, Debian and Fedora Pythons mark themselves *externally managed*
+(PEP 668) and refuse `pip install` outright:
 
 ```
-==> installing weaver packages (editable)
-==> installing dev tools
-==> verifying
-  weaver_core  0.1.0
-  weaver_proxy 0.1.0
-==> done. run: pytest
+error: externally-managed-environment
+× This environment is externally managed
 ```
 
-Check it took:
+The documented escape hatch, `--break-system-packages`, can damage a Homebrew
+installation. Do not use it. A venv is the correct answer and costs one
+command.
+
+After activating, these all work:
 
 ```bash
-python3 -c "import weaver_core, weaver_store, weaver_proxy; print('ok')"
+pytest
+python -m weaver_api --demo
+weaver-api --demo              # console entry point
+weaver-proxy --config weaver.config.example.json --detect
 ```
 
-### If that import fails
+Or skip activation and use the full path:
+
+```bash
+.venv/bin/python -m pytest
+.venv/bin/weaver-api --demo
+```
+
+### Options
+
+```bash
+bash scripts/dev-setup.sh                      # create/use ./.venv  (default)
+bash scripts/dev-setup.sh --here               # install into the ACTIVE env
+PYTHON=/path/to/python3.12 bash scripts/dev-setup.sh
+```
+
+If a virtualenv or conda env is already active, the script uses it rather than
+creating another.
+
+### If something fails
 
 ```bash
 python3 scripts/doctor.py
 ```
 
-Almost always the same cause: **`pip` and `python3` are different Pythons.**
-Stacked envs (`(sagar_env) (base)`) or running the script under `bash` while
-your shell is `zsh` can resolve them differently, so the install lands in an
-interpreter your shell never looks at. The setup script's own check passes
-because inside that script they match.
+Reports which interpreter is running, whether it is a venv, whether it is
+externally managed, where each package resolved from, and the exact command to
+fix it.
 
-`doctor.py` prints which interpreter is running, where each package resolved
-from, and the exact command to fix it. The fix is to install with the Python
-you actually use:
+Three causes account for nearly everything:
 
-```bash
-PYTHON="$(command -v python3)" bash scripts/dev-setup.sh
-```
+| What you see | Cause | Fix |
+|---|---|---|
+| `externally-managed-environment` | system Python, PEP 668 | `bash scripts/dev-setup.sh` (makes a venv) |
+| setup succeeds, then `No module named weaver_api` | venv not activated, or a different `python3` | `source .venv/bin/activate` |
+| `PYTHON="$(command -v python3)"` returns `alias python3=...` | `python3` is a shell alias | `PYTHON="$(python3 -c 'import sys; print(sys.executable)')" bash scripts/dev-setup.sh` |
 
-**You are not blocked by this.** `pyproject.toml` sets `pythonpath`, so
-`pytest` and `scripts/replay.py` work whether or not the install succeeded. The
-editable install only matters for importing `weaver_*` from outside the repo.
+**Tests need none of this.** `pyproject.toml` sets `pythonpath`, so `pytest`
+works from the repo with any interpreter that has pytest and pyyaml.
 
 ---
 

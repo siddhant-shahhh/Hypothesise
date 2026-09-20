@@ -58,8 +58,8 @@ scenarios/          eval suite — attack/ must fire, benign/ must not
 ## Dev setup
 
 ```bash
-pip install -e ".[dev]"          # or: uv sync
-cp .env.example .env
+bash scripts/dev-setup.sh        # creates .venv and installs everything
+source .venv/bin/activate
 pytest                            # 135 tests
 python3 scripts/replay.py --all   # 18 scenarios: 7/7 caught, 0/11 false positives
 python3 -m weaver_api --demo      # dashboard on http://127.0.0.1:8080
