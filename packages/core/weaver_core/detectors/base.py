@@ -61,6 +61,7 @@ class DetectorContext:
 Detector = Callable[[DetectorContext], Signal | None]
 
 _TIER1: list[tuple[str, Detector]] = []
+_TIER2: list[tuple[str, Detector]] = []
 
 # A crashing detector is caught so it cannot break a decision — but silence is
 # how a broken detector survives for weeks. scope_widening raised ValueError on
@@ -79,10 +80,31 @@ def tier1(name: str) -> Callable[[Detector], Detector]:
     return wrap
 
 
-def run_tier1(ctx: DetectorContext) -> list[Signal]:
-    """Run every Tier-1 detector. One misbehaving detector cannot break a decision."""
+def tier2(name: str) -> Callable[[Detector], Detector]:
+    """Register a Tier-2 (statistical) detector.
+
+    These also run inline. The original design had them async in the control
+    plane because `argument_drift` was going to need embeddings; ADR-011
+    replaced that with structural statistics, and every Tier-2 detector is now
+    an O(1) arithmetic check over accumulators already in memory. Keeping them
+    in the same pass means a decision uses all available evidence at the moment
+    it is made, rather than catching up one event late.
+
+    The tier distinction survives in WEIGHT, which is where it always mattered:
+    Tier 1 describes actions nobody legitimate performs, Tier 2 describes
+    actions that are merely unusual.
+    """
+
+    def wrap(fn: Detector) -> Detector:
+        _TIER2.append((name, fn))
+        return fn
+
+    return wrap
+
+
+def _run(registry: list[tuple[str, Detector]], ctx: DetectorContext) -> list[Signal]:
     out: list[Signal] = []
-    for name, fn in _TIER1:
+    for name, fn in registry:
         try:
             sig = fn(ctx)
         except Exception:  # noqa: BLE001 — a buggy detector must not block an agent
@@ -91,6 +113,23 @@ def run_tier1(ctx: DetectorContext) -> list[Signal]:
         if sig is not None:
             out.append(sig)
     return out
+
+
+def run_tier1(ctx: DetectorContext) -> list[Signal]:
+    """Inline detectors. One misbehaving detector cannot break a decision."""
+    return _run(_TIER1, ctx)
+
+
+def run_tier2(ctx: DetectorContext) -> list[Signal]:
+    return _run(_TIER2, ctx)
+
+
+def run_all(ctx: DetectorContext) -> list[Signal]:
+    return _run(_TIER1, ctx) + _run(_TIER2, ctx)
+
+
+def tier2_names() -> list[str]:
+    return [n for n, _ in _TIER2]
 
 
 def tier1_names() -> list[str]:

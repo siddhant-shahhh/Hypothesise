@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 
 from .baseline.model import BaselineStore
 from .detectors import tier1 as _tier1_detectors  # noqa: F401 — registers them
-from .detectors.base import DetectorContext, SessionWindow, run_tier1
+from .detectors import tier2 as _tier2_detectors  # noqa: F401 — registers them
+from .detectors.base import DetectorContext, SessionWindow, run_all
 from .events import Decision, Event, Verdict
 from .graph.model import Edge, GraphSnapshot, edge_key, edges_for_event, nodes_for_event
 from .policy.score import ScoreInput, decide
@@ -45,7 +46,7 @@ class Engine:
             self._grow_graph(ev)
             return Decision(verdict=Verdict.ALLOW), []
 
-        signals = run_tier1(DetectorContext(ev, window, baseline, self.snapshot))
+        signals = run_all(DetectorContext(ev, window, baseline, self.snapshot))
         decision = decide(
             ScoreInput(
                 signals=signals,

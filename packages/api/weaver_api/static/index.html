@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weaver</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232c; --line:#2a323d;
+  --fg:#e6edf3; --dim:#8b949e; --faint:#6e7681;
+  --allow:#3fb950; --ask:#d29922; --block:#f85149;
+  --accent:#58a6ff; --mag:#bc8cff;
+}
+:root[data-theme="light"]{
+  --bg:#ffffff; --panel:#f6f8fa; --panel2:#eef1f4; --line:#d8dee4;
+  --fg:#1f2328; --dim:#59636e; --faint:#818b98;
+  --allow:#1a7f37; --ask:#9a6700; --block:#cf222e;
+  --accent:#0969da; --mag:#8250df;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:14px/1.5 ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}
+header{display:flex;align-items:center;gap:16px;padding:12px 20px;
+  border-bottom:1px solid var(--line);background:var(--panel);
+  position:sticky;top:0;z-index:10;flex-wrap:wrap}
+.logo{font-weight:700;letter-spacing:.5px}
+.logo small{color:var(--dim);font-weight:400;margin-left:8px}
+nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+nav button{background:none;border:1px solid transparent;color:var(--dim);
+  padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit}
+nav button:hover{color:var(--fg);background:var(--panel2)}
+nav button.on{color:var(--fg);background:var(--panel2);border-color:var(--line)}
+main{padding:20px;max-width:1400px;margin:0 auto}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:12px;margin-bottom:20px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+.kpi .n{font-size:26px;font-weight:600;line-height:1.1}
+.kpi .l{color:var(--dim);font-size:11px;text-transform:uppercase;
+  letter-spacing:.6px;margin-top:4px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:16px;margin-bottom:16px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);
+  margin:0 0 12px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;color:var(--faint);font-weight:500;font-size:11px;
+  text-transform:uppercase;letter-spacing:.5px;padding:6px 10px;
+  border-bottom:1px solid var(--line)}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr.click{cursor:pointer}
+tr.click:hover{background:var(--panel2)}
+.v{font-weight:600;font-size:11px;letter-spacing:.5px}
+.v.allow{color:var(--allow)} .v.ask{color:var(--ask)} .v.block{color:var(--block)}
+.pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;
+  border:1px solid var(--line);color:var(--dim)}
+.pill.secret{color:var(--block);border-color:var(--block)}
+.pill.shell,.pill.network_egress{color:var(--ask);border-color:var(--ask)}
+.pill.database{color:var(--accent);border-color:var(--accent)}
+.det{color:var(--mag);font-size:12px;margin-top:4px}
+.det b{font-weight:600}
+.sentence{color:var(--fg);font-size:12px;margin-top:4px;padding:6px 10px;
+  border-left:2px solid var(--line);background:var(--panel2);border-radius:0 4px 4px 0}
+.sentence.block{border-left-color:var(--block)}
+.sentence.ask{border-left-color:var(--ask)}
+.dim{color:var(--dim)} .faint{color:var(--faint)}
+.mono{font-family:inherit;word-break:break-all}
+#cy{height:520px;background:var(--bg);border-radius:6px;border:1px solid var(--line)}
+.empty{color:var(--dim);text-align:center;padding:40px 20px}
+.empty code{background:var(--panel2);padding:2px 6px;border-radius:4px;color:var(--fg)}
+.bar{height:4px;background:var(--panel2);border-radius:2px;overflow:hidden;
+  margin-top:6px;max-width:120px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.back{background:none;border:1px solid var(--line);color:var(--dim);
+  padding:4px 10px;border-radius:6px;cursor:pointer;font:inherit;margin-bottom:12px}
+.back:hover{color:var(--fg)}
+@media(max-width:600px){main{padding:12px}td,th{padding:6px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">WEAVER <small>agent immune system</small></div>
+  <nav>
+    <button data-v="overview" class="on">Overview</button>
+    <button data-v="sessions">Sessions</button>
+    <button data-v="alerts">Alerts</button>
+    <button data-v="graph">Graph</button>
+    <button id="theme">◐</button>
+  </nav>
+</header>
+<main id="app"><div class="empty">loading…</div></main>
+
+<script>
+const $ = s => document.querySelector(s);
+const app = $('#app');
+let view = 'overview', session = null;
+
+const api = p => fetch(p).then(r => r.ok ? r.json() : Promise.reject(r.status));
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const short = u => { const s = String(u ?? ''); return s.length > 58 ? s.slice(0,55)+'…' : s; };
+
+function vClass(v){ return `v ${v}`; }
+
+// ---------- overview ----------
+async function overview(){
+  const [s, a] = await Promise.all([api('/v1/stats'), api('/v1/alerts?limit=8')]);
+  const v = s.verdicts || {};
+  app.innerHTML = `
+  <div class="kpis">
+    <div class="kpi"><div class="n">${s.events}</div><div class="l">events</div></div>
+    <div class="kpi"><div class="n">${s.sessions}</div><div class="l">sessions</div></div>
+    <div class="kpi"><div class="n">${s.agents}</div><div class="l">agents</div></div>
+    <div class="kpi"><div class="n" style="color:var(--ask)">${v.ask||0}</div><div class="l">held</div></div>
+    <div class="kpi"><div class="n" style="color:var(--block)">${v.block||0}</div><div class="l">blocked</div></div>
+  </div>
+  <div class="card">
+    <h2>Detectors firing</h2>
+    ${s.detectors.length ? `<table><tbody>${s.detectors.map(d=>`
+      <tr><td style="width:60%">${esc(d.detector)}</td>
+      <td class="dim">${d.count}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">nothing has fired yet</div>'}
+  </div>
+  <div class="card">
+    <h2>Riskiest resources</h2>
+    ${s.riskiest.length ? `<table><thead><tr><th>resource</th><th>class</th><th>risk</th></tr></thead>
+      <tbody>${s.riskiest.map(r=>`<tr>
+        <td class="mono">${esc(short(r.label))}</td>
+        <td><span class="pill ${esc(r.class)}">${esc(r.class)}</span></td>
+        <td>${r.risk.toFixed(3)}<div class="bar"><i style="width:${r.risk*100}%"></i></div></td>
+      </tr>`).join('')}</tbody></table>`
+      : '<div class="empty">no resources scored yet</div>'}
+  </div>
+  <div class="card">
+    <h2>Recent alerts</h2>${alertRows(a)}
+  </div>`;
+}
+
+function alertRows(a){
+  if(!a.length) return '<div class="empty">no alerts</div>';
+  return `<table><thead><tr><th>agent</th><th>tool</th><th>verdict</th><th>why</th></tr></thead>
+  <tbody>${a.map(x=>`<tr>
+    <td>${esc(x.agent_id)}<div class="faint">step ${x.step}</div></td>
+    <td class="mono">${esc(x.tool)}<div class="faint mono">${esc(short(x.resource))}</div></td>
+    <td><span class="${vClass(x.verdict)}">${esc(x.verdict.toUpperCase())}</span>
+        <div class="faint">${x.score.toFixed(2)}</div></td>
+    <td>${(x.detectors||[]).map(d=>`<div class="det"><b>${esc(d.detector)}</b></div>`).join('')}
+        <div class="sentence ${esc(x.verdict)}">${esc(x.sentence)}</div></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+// ---------- sessions ----------
+async function sessions(){
+  const s = await api('/v1/sessions');
+  if(!s.length){ app.innerHTML = emptyHint(); return; }
+  app.innerHTML = `<div class="card"><h2>Sessions</h2>
+  <table><thead><tr><th>agent</th><th>events</th><th>alerts</th><th>started</th></tr></thead>
+  <tbody>${s.map(x=>`<tr class="click" data-s="${esc(x.session_id)}">
+    <td>${esc(x.agent_id)}<div class="faint mono">${esc(x.session_id.slice(0,18))}…</div></td>
+    <td>${x.events}</td>
+    <td>${x.alerts ? `<span class="v block">${x.alerts}</span>` : '<span class="dim">0</span>'}</td>
+    <td class="dim">${esc((x.started||'').replace('T',' ').slice(0,19))}</td>
+  </tr>`).join('')}</tbody></table></div>`;
+  app.querySelectorAll('tr.click').forEach(tr =>
+    tr.onclick = () => { session = tr.dataset.s; timeline(); });
+}
+
+// ---------- the hero screen ----------
+async function timeline(){
+  const t = await api('/v1/sessions/' + encodeURIComponent(session));
+  app.innerHTML = `<button class="back">← sessions</button>
+  <div class="card"><h2>Session timeline — ${esc(t[0]?.tool ? '' : '')}${esc(session.slice(0,24))}…</h2>
+  <table><thead><tr><th>#</th><th>tool</th><th>resource</th><th>verdict</th><th>evidence</th></tr></thead>
+  <tbody>${t.map(e=>`<tr>
+    <td class="dim">${e.step}</td>
+    <td class="mono">${esc(e.tool)}<div class="faint">${esc(e.action)}</div></td>
+    <td class="mono">${esc(short(e.resource)) || '<span class="faint">—</span>'}
+        <div><span class="pill ${esc(e.class)}">${esc(e.class)}</span></div></td>
+    <td><span class="${vClass(e.verdict)}">${esc(e.verdict.toUpperCase())}</span>
+        <div class="faint">${(e.score||0).toFixed(2)}</div></td>
+    <td>${(e.detectors||[]).map(d=>`<div class="det"><b>${esc(d.detector)}</b>
+          <span class="dim">${esc(d.detail||'')}</span></div>`).join('')}
+        ${e.sentence ? `<div class="sentence ${esc(e.verdict)}">${esc(e.sentence)}</div>` : ''}</td>
+  </tr>`).join('')}</tbody></table></div>`;
+  app.querySelector('.back').onclick = () => { session = null; sessions(); };
+}
+
+// ---------- alerts ----------
+async function alerts(){
+  const a = await api('/v1/alerts');
+  app.innerHTML = `<div class="card"><h2>All alerts</h2>${alertRows(a)}</div>`;
+}
+
+// ---------- graph ----------
+async function graph(){
+  const g = await api('/v1/graph');
+  if(!g.nodes.length){ app.innerHTML = emptyHint(); return; }
+  app.innerHTML = `<div class="card"><h2>Behavioural graph
+    <span class="dim">— ${g.nodes.length} nodes, ${g.edges.length} edges;
+    colour is risk, which lives on the graph, not on the agent</span></h2>
+    <div id="cy"></div></div>`;
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  const risky = r => r > .5 ? css('--block') : r > .25 ? css('--ask') : css('--accent');
+  cytoscape({
+    container: $('#cy'),
+    elements: [
+      ...g.nodes.map(n => ({data:{id:n.id, label:n.label?.slice(0,26)||n.id,
+                                  kind:n.kind, risk:n.risk}})),
+      ...g.edges.filter(e => g.nodes.some(n=>n.id===e.src) && g.nodes.some(n=>n.id===e.dst))
+               .map(e => ({data:{id:e.id, source:e.src, target:e.dst, w:Math.min(6,1+e.count/4)}}))
+    ],
+    style: [
+      {selector:'node', style:{
+        'label':'data(label)','font-size':9,'color':css('--dim'),
+        'text-valign':'bottom','text-margin-y':4,
+        'background-color': e => e.data('kind')==='agent' ? css('--mag') : risky(e.data('risk')),
+        'width': e => e.data('kind')==='agent'?26:16,
+        'height': e => e.data('kind')==='agent'?26:16,
+        'shape': e => e.data('kind')==='agent'?'round-rectangle':'ellipse'}},
+      {selector:'edge', style:{'width':'data(w)','line-color':css('--line'),
+        'target-arrow-color':css('--line'),'target-arrow-shape':'triangle',
+        'curve-style':'bezier','arrow-scale':.7}}
+    ],
+    layout:{name:'cose', animate:false, nodeRepulsion:9000, idealEdgeLength:70}
+  });
+}
+
+function emptyHint(){
+  return `<div class="card"><div class="empty">
+    <p>No data yet.</p>
+    <p class="dim">Load the scenario suite:<br>
+    <code>python3 -m weaver_api --demo</code></p>
+    <p class="dim">Or point an agent at the proxy:<br>
+    <code>python3 -m weaver_proxy --config weaver.config.json --detect</code></p>
+  </div></div>`;
+}
+
+// ---------- shell ----------
+const views = {overview, sessions, alerts, graph};
+function render(){
+  session = null;
+  app.innerHTML = '<div class="empty">loading…</div>';
+  views[view]().catch(e => app.innerHTML =
+    `<div class="card"><div class="empty">error loading ${view}: ${esc(e)}</div></div>`);
+}
+document.querySelectorAll('nav button[data-v]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button[data-v]').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); view = b.dataset.v; render();
+});
+$('#theme').onclick = () => {
+  const el = document.documentElement;
+  const next = el.dataset.theme === 'dark' ? 'light' : 'dark';
+  el.dataset.theme = next;
+  try { localStorage.setItem('weaver-theme', next); } catch(e){}
+  if(view === 'graph') render();
+};
+try {
+  const saved = localStorage.getItem('weaver-theme');
+  if(saved) document.documentElement.dataset.theme = saved;
+} catch(e){}
+render();
+</script>
+</body>
+</html>

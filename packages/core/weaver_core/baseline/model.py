@@ -50,6 +50,11 @@ class Baseline:
     invoke_targets: set[str] = field(default_factory=set)
     hours: Counter = field(default_factory=Counter)
     class_pairs: set[tuple[str, str]] = field(default_factory=set)
+    # Tier-2 inputs. Welford accumulators rather than stored samples: constant
+    # memory per tool, and a baseline that never grows without bound.
+    arg_keysets: dict[str, set[str]] = field(default_factory=dict)   # tool -> seen key-sets (joined)
+    arg_len: dict[str, tuple[int, float, float]] = field(default_factory=dict)  # tool -> (n, mean, M2)
+    gap_stats: tuple[int, float, float] = (0, 0.0, 0.0)              # (n, mean, M2) seconds
 
     @property
     def is_active(self) -> bool:
@@ -82,8 +87,56 @@ class Baseline:
                 if len(seq) >= n:
                     self.ngrams.add(ngram_hash([step_key(e) for e in seq[-n:]]))
 
+        self._observe_args(ev)
+        if history:
+            self._observe_gap(history[-1], ev)
+
         if self.event_count >= MIN_EVENTS_TO_ACTIVATE:
             self.state = "active"
+
+    # -- tier 2 accumulators ------------------------------------------------
+
+    def _observe_args(self, ev: Event) -> None:
+        tool = ev.tool.qualified
+        if ev.arg_keys:
+            self.arg_keysets.setdefault(tool, set()).add(",".join(sorted(ev.arg_keys)))
+        if ev.arg_bytes > 0:
+            self.arg_len[tool] = _welford(self.arg_len.get(tool, (0, 0.0, 0.0)), ev.arg_bytes)
+
+    def _observe_gap(self, prev: Event, ev: Event) -> None:
+        gap = _seconds_between(prev.ts, ev.ts)
+        if gap is not None:
+            self.gap_stats = _welford(self.gap_stats, gap)
+
+    def arg_len_z(self, tool: str, nbytes: int) -> float | None:
+        """z-score of an argument payload size against this tool's history."""
+        n, mean, m2 = self.arg_len.get(tool, (0, 0.0, 0.0))
+        if n < 5:
+            return None
+        var = m2 / (n - 1)
+        if var <= 0:
+            return None
+        return (nbytes - mean) / (var ** 0.5)
+
+    def gap_z(self, gap: float) -> float | None:
+        n, mean, m2 = self.gap_stats
+        if n < 8:
+            return None
+        var = m2 / (n - 1)
+        if var <= 0:
+            return None
+        return (gap - mean) / (var ** 0.5)
+
+    def knows_keyset(self, tool: str, keys: list[str]) -> bool:
+        seen = self.arg_keysets.get(tool)
+        if not seen:
+            return True          # nothing learned yet -> do not call it novel
+        return ",".join(sorted(keys)) in seen
+
+    def active_hour(self, hour: int) -> bool:
+        if sum(self.hours.values()) < 20:
+            return True          # too little history to call any hour unusual
+        return self.hours.get(hour, 0) > 0
 
     # -- queries the detectors use ------------------------------------------
 
@@ -101,6 +154,23 @@ class Baseline:
 
     def knows_class_pair(self, a: ResourceClass, b: ResourceClass) -> bool:
         return (a.value, b.value) in self.class_pairs
+
+
+def _welford(acc: tuple[int, float, float], x: float) -> tuple[int, float, float]:
+    """Online mean/variance. Constant memory, no sample retention."""
+    n, mean, m2 = acc
+    n += 1
+    delta = x - mean
+    mean += delta / n
+    m2 += delta * (x - mean)
+    return (n, mean, m2)
+
+
+def _seconds_between(a: str, b: str) -> float | None:
+    try:
+        return abs((datetime.fromisoformat(b) - datetime.fromisoformat(a)).total_seconds())
+    except (ValueError, TypeError):
+        return None
 
 
 class BaselineStore:

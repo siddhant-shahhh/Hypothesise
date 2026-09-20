@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .classify import classify_action, classify_resource
-from .events import Event, Outcome, Resource, Status, Tool, new_id
+from .events import Event, Outcome, Resource, Status, Tool, arg_shape, digest_args, new_id
 
 
 @dataclass
@@ -46,6 +46,8 @@ def load_scenario(path: str | Path, base_ts: datetime | None = None) -> Scenario
     for i, e in enumerate(raw.get("events", [])):
         tool = Tool(server=e["tool"]["server"], name=e["tool"]["name"])
         uri = e.get("resource", "") or ""
+        args = e.get("args") or {}
+        keys, nbytes = arg_shape(args) if args else ([], 0)
         cls = classify_resource(uri, tool.server, tool.name)
         action = classify_action(tool.name, cls)
         events.append(
@@ -57,6 +59,9 @@ def load_scenario(path: str | Path, base_ts: datetime | None = None) -> Scenario
                 resource=Resource(uri=uri, cls=cls),
                 action=action,
                 ts=(t0 + timedelta(seconds=i * 3)).isoformat(timespec="milliseconds"),
+                arg_keys=keys,
+                arg_bytes=int(e.get("arg_bytes", nbytes)),
+                args_digest=digest_args(args) if args else "",
                 outcome=Outcome(status=Status(e.get("status", "ok"))),
             )
         )

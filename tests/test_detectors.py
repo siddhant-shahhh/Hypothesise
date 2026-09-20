@@ -12,6 +12,7 @@ from weaver_core.detectors.base import (
     detector_errors,
     reset_detector_errors,
     tier1_names,
+    tier2_names,
 )
 from weaver_core.engine import Engine
 from weaver_core.events import Verdict
@@ -71,11 +72,19 @@ def test_no_detector_crashes_silently(engine):
     )
 
 
-def test_all_tier1_detectors_registered():
+def test_all_detectors_registered():
     assert set(tier1_names()) == {
         "retry_after_denial", "sensitive_then_egress", "scope_widening",
         "novel_sequence", "novel_edge", "fan_out",
     }
+    assert set(tier2_names()) == {
+        "argument_anomaly", "novel_arg_shape", "velocity_anomaly", "off_hours",
+    }
+
+
+def test_tiers_do_not_overlap():
+    """A detector registered in both registries would fire twice and double-count."""
+    assert not set(tier1_names()) & set(tier2_names())
 
 
 # -- each detector fires on its own target ----------------------------------
@@ -89,6 +98,7 @@ def test_all_tier1_detectors_registered():
         ("scope_widening", "scope_widening"),
         ("agent_fanout", "fan_out"),
         ("novel_tool_combination", "novel_sequence"),
+        ("bulk_exfil_payload", "argument_anomaly"),
     ],
 )
 def test_detector_fires_on_its_target(engine, scenario, detector):

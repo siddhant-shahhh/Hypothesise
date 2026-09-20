@@ -129,6 +129,11 @@ class Event:
     ts: str = field(default_factory=utcnow)
     tenant_id: str = "default"
     args_digest: str = ""
+    # Argument SHAPE, not content. The digest identifies a payload but says
+    # nothing about it; these let Tier-2 detectors reason about size and
+    # structure without ever storing or transmitting the arguments themselves.
+    arg_keys: list[str] = field(default_factory=list)
+    arg_bytes: int = 0
     outcome: Outcome = field(default_factory=Outcome)
     decision: Decision = field(default_factory=Decision)
 
@@ -146,6 +151,8 @@ class Event:
             "resource": {"uri": self.resource.uri, "class": self.resource.cls.value},
             "action": self.action.value,
             "args_digest": self.args_digest,
+            "arg_keys": self.arg_keys,
+            "arg_bytes": self.arg_bytes,
             "outcome": {
                 "status": self.outcome.status.value,
                 "latency_ms": self.outcome.latency_ms,
@@ -173,6 +180,8 @@ class Event:
             ts=d.get("ts") or utcnow(),
             tenant_id=d.get("tenant_id", "default"),
             args_digest=d.get("args_digest", ""),
+            arg_keys=list(d.get("arg_keys") or []),
+            arg_bytes=int(d.get("arg_bytes", 0)),
             outcome=Outcome(
                 status=Status(out_raw.get("status", "ok")),
                 latency_ms=int(out_raw.get("latency_ms", 0)),
@@ -188,6 +197,16 @@ class Event:
                 fail_open=bool(dec_raw.get("fail_open", False)),
             ),
         )
+
+
+def arg_shape(args: Any) -> tuple[list[str], int]:
+    """(top-level keys, serialised size). Shape only — never the values."""
+    try:
+        blob = json.dumps(args, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        blob = repr(args)
+    keys = sorted(args.keys()) if isinstance(args, dict) else []
+    return keys, len(blob)
 
 
 def digest_args(args: Any) -> str:

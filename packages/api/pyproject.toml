@@ -1,9 +1,9 @@
 [project]
 name = "weaver-api"
 version = "0.1.0"
-description = "Weaver control plane"
+description = "Weaver control plane and dashboard"
 requires-python = ">=3.10"
-dependencies = ["weaver-core", "weaver-store"]
+dependencies = ["weaver-core", "weaver-store", "fastapi>=0.110", "uvicorn>=0.27"]
 
 [build-system]
 requires = ["hatchling"]
@@ -11,3 +11,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["weaver_api"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"weaver_api/static" = "weaver_api/static"

@@ -49,6 +49,9 @@ ignore = ["E501"]   # line length is formatting, not correctness
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["E402"]   # sys.path shim must precede imports
+# Body()/Query() in argument defaults is FastAPI's documented idiom, and the
+# thing B008 warns about (a shared mutable evaluated once) does not apply.
+"packages/api/*" = ["B008"]
 
 [tool.mypy]
 python_version = "3.10"

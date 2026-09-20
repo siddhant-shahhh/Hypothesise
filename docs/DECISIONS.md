@@ -204,3 +204,72 @@ surprise us. Detection quality is unproven until real agents run through it.
 
 *Open:* which MCP servers the client runs is still unknown. Building against
 GitHub, Postgres and shell as the assumed default (ADR-001).
+
+---
+
+### ADR-011 — `argument_anomaly` by structure, not embeddings
+**Date:** 2026-09-20 · **Status:** accepted · replaces `argument_drift`
+
+The original Tier-2 design measured embedding distance between a call's
+arguments and the agent's centroid for that tool. Replaced with structural
+statistics: payload byte-size z-score, and novelty of the parameter key-set.
+
+*Why:*
+
+- An embedding model in the decision path costs inference latency on every
+  tool call, in a product whose budget is 50ms total.
+- It makes verdicts non-deterministic and therefore unauditable — "why was this
+  blocked" has no stable answer.
+- The product exists to police LLM agents. Feeding attacker-controlled tool
+  arguments into a model, inside the component deciding whether to block them,
+  is prompt injection with extra steps.
+- It adds a heavyweight dependency to a tool people are meant to `pip install`
+  (ADR-009).
+
+*What it costs:* semantic drift is invisible. An argument that is the same size
+and shape but semantically strange reads as normal.
+
+*What it buys:* bulk exfiltration is caught by size alone — the dominant real
+signal — with no model, no latency, and no need to store the arguments
+themselves. Only shape (key names and byte count) is retained, never values.
+
+---
+
+### ADR-012 — Tier 2 runs inline, in the same pass as Tier 1
+**Date:** 2026-09-20 · **Status:** accepted · amends ARCHITECTURE §4
+
+Consequence of ADR-011. With embeddings gone, every Tier-2 detector is an O(1)
+check over accumulators already in memory, so the async control-plane split
+buys nothing and costs a one-event lag in the evidence available to a decision.
+
+Separate registries are kept (`run_tier1`, `run_tier2`, `run_all`) so the
+distinction stays visible and a detector cannot silently land in the wrong
+tier — `test_tiers_do_not_overlap` fails if one registers in both. The tier
+distinction survives where it always mattered: **weight**. No Tier-2 detector
+short-circuits to BLOCK.
+
+---
+
+### ADR-013 — The database lives in `~/.weaver`, never in the user's project
+**Date:** 2026-09-20 · **Status:** accepted
+
+Default `WEAVER_DB_URL` is `sqlite:///~/.weaver/weaver.db`, overridable with
+`WEAVER_HOME`.
+
+*Why:* a tool people install should not drop a database into the directory they
+are working in. It pollutes the repo, it gets committed by accident, and — as
+this project hit directly, running from an external drive — SQLite's locking
+can fail outright on removable or network volumes with "attempt to write a
+readonly database".
+
+*Also fixed here,* two SQLite behaviours that fail confusingly:
+
+- Every connection to `:memory:` gets its own empty database, so tables created
+  during setup are invisible to the next connection. `StaticPool` pins the
+  engine to one connection.
+- The API serves requests on a thread pool, and SQLite refuses cross-thread use
+  by default. `check_same_thread=False` is required; SQLAlchemy's pool already
+  serialises access, so it is safe.
+
+Neither applies to Postgres, which is one more reason the M5 switch simplifies
+this rather than complicating it.

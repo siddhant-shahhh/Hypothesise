@@ -1,6 +1,6 @@
 # AI_Layer — Agent Immune System
 
-> **Working codename:** Weaver · **Status:** M0 complete · M1 in progress (proxy working, dashboard next)
+> **Working codename:** Weaver · **Status:** M0 + M1 + M2 complete · M3 (enforcement) next
 
 A behavioural security layer for AI agents. It sits between an agent and the tools
 it calls, learns how that agent normally operates, detects dangerous deviations,
@@ -17,6 +17,7 @@ suspect.
 
 | Document | What's in it |
 |---|---|
+| [`docs/PRIMER.md`](docs/PRIMER.md) | **Start here** — the whole project in ten minutes |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, graph schema, detector tiers, risk math, trust machine |
 | [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) | M0–M5, day by day, with exit criteria |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | ADR log and the open questions |
@@ -59,8 +60,9 @@ scenarios/          eval suite — attack/ must fire, benign/ must not
 ```bash
 pip install -e ".[dev]"          # or: uv sync
 cp .env.example .env
-pytest                            # 83 tests
-python3 scripts/replay.py --all   # 16 scenarios
+pytest                            # 135 tests
+python3 scripts/replay.py --all   # 18 scenarios: 7/7 caught, 0/11 false positives
+python3 -m weaver_api --demo      # dashboard on http://127.0.0.1:8080
 ```
 
 ## Try the proxy

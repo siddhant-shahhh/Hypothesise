@@ -204,6 +204,7 @@ session's ring buffer and the in-memory graph snapshot.
 | 3 | `novel_edge` | This agent→tool or tool→resource edge has never been observed | medium |
 | 4 | `novel_sequence` | The current n-gram (n=3,4,5) is absent from the agent's baseline | medium |
 | 5 | `scope_widening` | Resource sensitivity increases monotonically across a sliding window | high |
+| 6 | `fan_out` | Two or more agents invoked that this agent has never invoked | high |
 
 **`retry_after_denial` is the product's signature detector.** It is the agent
 equivalent of port scanning: an agent that gets blocked and immediately probes a
@@ -211,17 +212,33 @@ second path to the same target is doing something no legitimate workflow does.
 Almost nothing on the market catches it, because per-call policy engines have no
 memory of the denial. Build this first, demo this first.
 
-### Tier 2 — statistical, async, needs a baseline
+### Tier 2 — statistical, needs a baseline
 
-Ships in M3. Runs in the control plane after ingest; results feed the graph and
-influence the *next* decision, not this one.
+Built in M2. **These run inline too**, in the same pass as Tier 1.
 
-| # | Detector | Method |
-|---|---|---|
-| 6 | `velocity_anomaly` | z-score of call rate vs. learned per-agent rate |
-| 7 | `off_hours` | outside the agent's learned active-hours distribution |
-| 8 | `argument_drift` | embedding distance of tool args vs. the agent's arg centroid for that tool |
-| 9 | `fan_out` | agent invoking agents outside its known invocation set |
+> **Changed during M2.** The original design put Tier 2 in the control plane,
+> async, because `argument_drift` was going to need embeddings. ADR-011
+> replaced that with structural statistics, and every Tier-2 detector is now an
+> O(1) arithmetic check over Welford accumulators already in memory. Running
+> them inline means a decision uses all available evidence at the moment it is
+> made, rather than catching up one event late.
+>
+> The tier distinction survives in **weight**, which is where it always
+> mattered: Tier 1 describes actions nobody legitimate performs; Tier 2
+> describes actions that are merely unusual. No Tier-2 detector
+> short-circuits, and none exceeds HIGH.
+
+| # | Detector | Weight | Method |
+|---|---|---|---|
+| 7 | `argument_anomaly` | HIGH / LOW | Payload size z-score vs. this tool's history. HIGH only when outbound. |
+| 8 | `novel_arg_shape` | LOW | Parameter key-set never used before, on a sensitive resource |
+| 9 | `velocity_anomaly` | LOW | Inter-call gap far below normal, landing on a sensitive resource |
+| 10 | `off_hours` | LOW | An hour with no history, reaching a sensitive resource |
+
+Each keeps a Welford accumulator (count, mean, M²) per tool rather than storing
+samples: constant memory, and a baseline that cannot grow without bound. All
+four return `None` until the baseline is active — statistics over eight samples
+are not statistics.
 
 ### Tier 3 — graph-level
 
@@ -317,10 +334,20 @@ score = w_seq   · sequence_anomaly
 Thresholds:
 
 ```
-score < 0.35            → ALLOW
-0.35 ≤ score < 0.70     → ASK   (hold for human approval)
-score ≥ 0.70            → BLOCK
+score < 0.30            → ALLOW
+0.30 ≤ score < 0.65     → ASK   (hold for human approval)
+score ≥ 0.65            → BLOCK
 ```
+
+Signals combine **saturatingly**, not additively:
+
+```
+combined = 1 − Π(1 − wᵢ)
+```
+
+A sum lets a pile of weak hints outrank one hard fact, which is how anomaly
+products earn their reputation for noise. Three MEDIUMs must raise concern
+without reaching the certainty of one CRITICAL.
 
 **Short-circuit:** any `critical` Tier-1 detector goes straight to BLOCK (in
 enforce mode) regardless of score. `retry_after_denial` and `sensitive_then_egress`

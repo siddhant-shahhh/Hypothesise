@@ -278,6 +278,112 @@ inline — still in `observe` mode, so nothing is blocked.
 
 ---
 
+## 4c. Tier-2 detectors (M2)
+
+Four statistical detectors run in the same pass as Tier 1 (ADR-012), weighted
+lower because "unusual" is weaker evidence than "nobody legitimate does this".
+
+| Detector | Weight | Fires when |
+|---|---|---|
+| `argument_anomaly` | HIGH / LOW | Payload far larger than this tool ever carries. HIGH only when outbound. |
+| `novel_arg_shape` | LOW | Parameter names never used before, on a sensitive resource |
+| `velocity_anomaly` | LOW | Calls far faster than this agent's normal pace, hitting something sensitive |
+| `off_hours` | LOW | An hour this agent has never worked in |
+
+```bash
+python3 scripts/replay.py scenarios/attack/bulk_exfil_payload.yaml
+```
+
+```
+1  http-mcp/fetch  egress  network_egress  0.60  ASK
+   [HIGH] argument_anomaly — http-mcp/fetch called with 480,000 bytes of
+     arguments — 10378x its usual 46 bytes, far above normal across 12 prior calls
+```
+
+Same agent, same tool, same destination class as its ordinary work. Only the
+size is wrong.
+
+```bash
+pytest -k "tiers_do_not_overlap" -v   # a detector in both registries double-counts
+curl -s localhost:8080/v1/detectors   # what's registered, and any that are crashing
+```
+
+---
+
+## 4d. The API and dashboard (M1)
+
+```bash
+python3 -m weaver_api --demo
+```
+
+Starts on `http://127.0.0.1:8080` and loads the scenario suite so there is
+something to look at. Without `--demo` it starts empty and waits for events.
+
+```bash
+python3 -m weaver_api                       # empty, waits for ingest
+python3 -m weaver_api --port 9000           # different port
+python3 -m weaver_api --db sqlite:///./x.db # different database
+```
+
+The database defaults to `~/.weaver/weaver.db` — deliberately **not** in your
+project (ADR-013). Override with `WEAVER_HOME` or `--db`.
+
+### The four screens
+
+- **Overview** — counts, which detectors are firing, riskiest resources, recent alerts
+- **Sessions** — every agent run; click one for its timeline
+- **Alerts** — everything above ALLOW, with evidence and explanation
+- **Graph** — the behavioural graph, node colour by risk
+
+**Session timeline is the screen that matters.** Step by step: tool, resource,
+class, verdict, every detector that fired with its detail, and the sentence.
+
+### Endpoints
+
+```bash
+curl -s localhost:8080/healthz
+curl -s localhost:8080/v1/stats
+curl -s localhost:8080/v1/sessions
+curl -s localhost:8080/v1/sessions/<session_id>
+curl -s localhost:8080/v1/alerts
+curl -s localhost:8080/v1/graph
+curl -s localhost:8080/v1/agents
+curl -s localhost:8080/v1/detectors
+```
+
+Send events in:
+
+```bash
+curl -s -X POST localhost:8080/v1/events \
+  -H 'content-type: application/json' \
+  -d '[{"agent_id":"my-agent","session_id":"s1","step":0,
+        "tool":{"server":"fs-mcp","name":"read_file"},
+        "resource":{"uri":"file:///app/.env","class":"secret"},
+        "action":"read"}]'
+```
+
+### See the stigmergy working
+
+```bash
+curl -s localhost:8080/v1/stats | python3 -m json.tool | head -40
+```
+
+`riskiest` is risk that accumulated **on resources**, boosted by how many
+distinct agents flagged each one, and decayed since. That list is the payoff
+from ADR-004 — nothing there is a property of any agent.
+
+```
+0.593  secret           shell://cat /app/.env
+0.564  network_egress   https://collector.unknown-host.net/ingest
+0.557  secret           file:///root/.aws/credentials
+```
+
+```bash
+pytest tests/test_api.py -v
+```
+
+---
+
 ## 5. Run the proxy
 
 ```bash
@@ -388,6 +494,9 @@ git status --short
 | `upstream X failed to start` | bad command in config | check `command`/`args`; the proxy keeps running without it |
 | replay says `FAIL` | no detectors yet | correct until M2 |
 | `pip install -e .` errors | you want the script | `bash scripts/dev-setup.sh` |
+| `attempt to write a readonly database` | SQLite on a removable/network volume | the default is `~/.weaver` now; set `WEAVER_HOME` if needed |
+| `no such table: events` | in-memory SQLite, one DB per connection | fixed via StaticPool; re-pull if you see it |
+| `PYTHON="$(command -v python3)"` fails | `python3` is a shell **alias** | `PYTHON="$(python3 -c 'import sys; print(sys.executable)')" bash scripts/dev-setup.sh` |
 | setup says OK but import fails | `pip` and `python3` are different Pythons | `python3 scripts/doctor.py`, then `PYTHON="$(command -v python3)" bash scripts/dev-setup.sh` |
 | tests pass but imports fail | expected — pytest uses `pythonpath`, not the install | only matters outside the repo |
 
@@ -402,5 +511,10 @@ pytest                                          # 83 tests
 ruff check packages scripts tests               # lint
 mypy packages/core/weaver_core                  # types
 python3 scripts/replay.py --all --quiet         # eval suite (exit 0 = criteria met)
-python3 -m weaver_proxy --config weaver.config.example.json   # run
+python3 -m weaver_proxy --config weaver.config.example.json --detect  # proxy
+python3 -m weaver_api --demo                    # dashboard on :8080
+python3 scripts/doctor.py                       # diagnose import problems
 ```
+
+New to the project? Read `docs/PRIMER.md` first — ten minutes, covers the whole
+thing.
