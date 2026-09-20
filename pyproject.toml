@@ -1,9 +1,30 @@
+# Workspace root. Not itself a distributable package — the shippable units are
+# under packages/*. `pip install -e .` installs all of them (see [tool.uv.sources]
+# and scripts/dev-setup.sh).
 [project]
-name = "weaver"
+name = "weaver-workspace"
 version = "0.1.0"
 description = "Agent Immune System — behavioural security layer for AI agents"
 requires-python = ">=3.10"
-dependencies = ["sqlalchemy>=2.0", "pyyaml>=6.0"]
+dependencies = [
+    "weaver-core",
+    "weaver-store",
+    "weaver-proxy",
+    "pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []
+
+[tool.uv.sources]
+weaver-core = { workspace = true }
+weaver-store = { workspace = true }
+weaver-proxy = { workspace = true }
+weaver-api = { workspace = true }
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11"]
