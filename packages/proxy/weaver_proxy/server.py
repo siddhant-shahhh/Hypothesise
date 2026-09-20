@@ -17,6 +17,7 @@ import sys
 from typing import Any
 
 from weaver_core.classify import classify_action, classify_resource
+from weaver_core.engine import Engine
 from weaver_core.events import (
     Decision,
     Event,
@@ -61,9 +62,17 @@ def extract_resource_uri(tool_name: str, args: dict[str, Any]) -> str:
 
 
 class WeaverProxy:
-    def __init__(self, config: ProxyConfig) -> None:
+    def __init__(self, config: ProxyConfig, engine: Engine | None = None) -> None:
         self.config = config
-        self.gate = Gate(config=config.gate)
+        # The engine is optional so the proxy can run bare (M1 behaviour:
+        # observe and record, decide nothing). Pass one to enable detection.
+        self.engine = engine
+        if engine is not None:
+            from .evaluator import engine_evaluator
+
+            self.gate = Gate(config=config.gate, evaluator=engine_evaluator(engine))
+        else:
+            self.gate = Gate(config=config.gate)
         self.emitter = EventEmitter(maxsize=config.queue_maxsize)
         self.snapshot = GraphSnapshot()
         self.upstreams: dict[str, Upstream] = {}

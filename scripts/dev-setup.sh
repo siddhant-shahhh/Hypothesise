@@ -14,7 +14,33 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 
 PY="${PYTHON:-python3}"
-command -v "$PY" >/dev/null 2>&1 || { echo "error: '$PY' not found on PATH"; exit 1; }
+
+# `command -v python3` in zsh prints "alias python3=/path/to/python" when python3
+# is an alias, not a path. Accept that form rather than choking on it.
+case "$PY" in
+  *alias*=*) PY="${PY#*=}" ;;
+esac
+PY="${PY%\'}"; PY="${PY#\'}"        # strip surrounding quotes if present
+
+# Resolve to a real executable. `type -P` consults PATH only, ignoring aliases
+# and shell functions.
+if [ ! -x "$PY" ]; then
+  RESOLVED="$(type -P "$PY" 2>/dev/null || true)"
+  if [ -n "$RESOLVED" ]; then
+    PY="$RESOLVED"
+  else
+    cat <<MSG
+error: could not resolve '$PY' to a Python executable.
+
+If python3 is a shell alias, \`command -v\` returns the alias text, not a path.
+Get the real path from Python itself — this is alias-proof:
+
+    PYTHON="\$(python3 -c 'import sys; print(sys.executable)')" bash scripts/dev-setup.sh
+
+MSG
+    exit 1
+  fi
+fi
 
 echo "==> interpreter"
 echo "    $PY -> $("$PY" -c 'import sys; print(sys.executable)')"

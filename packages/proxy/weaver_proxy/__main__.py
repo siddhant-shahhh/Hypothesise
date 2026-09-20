@@ -13,6 +13,8 @@ from .server import WeaverProxy
 def main() -> int:
     ap = argparse.ArgumentParser(prog="weaver-proxy", description="Weaver MCP proxy")
     ap.add_argument("--config", default="weaver.config.json")
+    ap.add_argument("--detect", action="store_true",
+                    help="enable the detection engine (default: record only)")
     args = ap.parse_args()
 
     try:
@@ -26,7 +28,14 @@ def main() -> int:
         f"budget={config.gate.budget_ms}ms upstreams={len(config.upstreams)}",
         file=sys.stderr,
     )
-    asyncio.run(WeaverProxy(config).run())
+    engine = None
+    if args.detect:
+        from weaver_core.engine import Engine
+
+        engine = Engine()
+        print("weaver: detection engine enabled", file=sys.stderr)
+
+    asyncio.run(WeaverProxy(config, engine=engine).run())
     return 0
 
 

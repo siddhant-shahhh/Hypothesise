@@ -201,3 +201,39 @@ def test_extract_resource_uri_unknown_shape_yields_empty():
     failure mode.
     """
     assert extract_resource_uri("mystery", {"foo": 1, "bar": [1, 2]}) == ""
+
+
+@pytest.mark.asyncio
+async def test_proxy_with_engine_records_decisions():
+    """The engine plugged into the Gate, end to end through a real subprocess."""
+    from weaver_core.engine import Engine
+
+    proxy = WeaverProxy(_config(_upstream("fs-mcp")), engine=Engine())
+    try:
+        await _boot(proxy)
+        await proxy.handle(p.request(3, "tools/call",
+                           {"name": "read_file", "arguments": {"path": "file:///app/.env"}}))
+        ev = (await proxy.emitter.drain())[0]
+        assert ev.decision.verdict is Verdict.ALLOW      # observe mode
+        assert ev.decision.budget_ms < 50                # inside the budget
+    finally:
+        await proxy.stop_upstreams()
+
+
+@pytest.mark.asyncio
+async def test_engine_decisions_stay_within_budget():
+    """Tier-1 detectors run inline. If they ever exceed the budget the Gate
+    fails open and detection silently stops."""
+    from weaver_core.engine import Engine
+
+    proxy = WeaverProxy(_config(_upstream("fs-mcp"), budget_ms=50), engine=Engine())
+    try:
+        await _boot(proxy)
+        for i in range(20):
+            await proxy.handle(p.request(100 + i, "tools/call",
+                               {"name": "read_file", "arguments": {"path": f"/f{i}"}}))
+        assert proxy.gate.stats.timeouts == 0
+        assert proxy.gate.stats.errors == 0
+        assert proxy.gate.stats.avg_ms < 20
+    finally:
+        await proxy.stop_upstreams()

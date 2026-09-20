@@ -211,3 +211,31 @@ def sequence_key(events: Iterable[Event]) -> list[str]:
     `novel_sequence` fires on everything.
     """
     return [f"{e.tool.qualified}:{e.action.value}:{e.resource.cls.value}" for e in events]
+
+
+# --- sensitivity ordering --------------------------------------------------
+# Used by scope_widening: the detector looks for a monotonic climb up this
+# ladder. The ordering is about blast radius if the resource is misused, which
+# is why SHELL and NETWORK_EGRESS outrank DATABASE — a shell can become any of
+# the others.
+
+SENSITIVITY: dict[ResourceClass, int] = {
+    ResourceClass.UNKNOWN: 0,
+    ResourceClass.SOURCE_CODE: 0,
+    ResourceClass.CONFIG: 1,
+    ResourceClass.COMMUNICATION: 1,
+    ResourceClass.DATABASE: 2,
+    ResourceClass.NETWORK_EGRESS: 3,
+    ResourceClass.SHELL: 3,
+    ResourceClass.SECRET: 4,
+}
+
+SENSITIVE_CLASSES = frozenset({
+    ResourceClass.SECRET,
+    ResourceClass.SHELL,
+    ResourceClass.DATABASE,
+})
+
+
+def sensitivity(cls: ResourceClass) -> int:
+    return SENSITIVITY.get(cls, 0)

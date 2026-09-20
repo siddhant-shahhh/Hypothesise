@@ -1,0 +1,12 @@
+name: orchestrator_normal
+description: >
+  Orchestrator delegating to the agents it always delegates to. Establishes the
+  known invoke set, so fan_out has something to be surprised by.
+expect: silent
+agent_id: orchestrator-agent-prod
+events:
+  - {tool: {server: github-mcp, name: get_issue},     resource: "github://acme/api/issues/9"}
+  - {tool: {server: a2a-mcp,    name: invoke_agent},  resource: "agent://coding-agent"}
+  - {tool: {server: a2a-mcp,    name: invoke_agent},  resource: "agent://review-agent"}
+  - {tool: {server: a2a-mcp,    name: invoke_agent},  resource: "agent://coding-agent"}
+  - {tool: {server: slack-mcp,  name: send_message},  resource: "slack://C0BUILD"}
