@@ -469,6 +469,8 @@ Env vars override the file: `WEAVER_MODE`, `WEAVER_FAIL_MODE`,
 
 ## 6. Dogfood it — real agent traffic today
 
+> Full walkthrough with client-by-client config: **`docs/DOGFOOD.md`**
+
 There is no production traffic to learn from (ADR-010), and this is the
 cheapest fix: put Weaver in front of your own Claude Code or Cursor session.
 
@@ -532,7 +534,7 @@ pytest                                          # 83 tests
 ruff check packages scripts tests               # lint
 mypy packages/core/weaver_core                  # types
 python3 scripts/replay.py --all --quiet         # eval suite (exit 0 = criteria met)
-python3 -m weaver_proxy --config weaver.config.example.json --detect  # proxy
+python3 -m weaver_proxy --config weaver.config.example.json --detect --api http://127.0.0.1:8080
 python3 -m weaver_api --demo                    # dashboard on :8080
 python3 scripts/doctor.py                       # diagnose import problems
 ```

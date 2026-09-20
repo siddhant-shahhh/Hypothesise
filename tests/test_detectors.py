@@ -75,7 +75,7 @@ def test_no_detector_crashes_silently(engine):
 def test_all_detectors_registered():
     assert set(tier1_names()) == {
         "retry_after_denial", "sensitive_then_egress", "scope_widening",
-        "novel_sequence", "novel_edge", "fan_out",
+        "novel_sequence", "novel_edge", "fan_out", "shell_exfil",
     }
     assert set(tier2_names()) == {
         "argument_anomaly", "novel_arg_shape", "velocity_anomaly", "off_hours",
@@ -99,6 +99,7 @@ def test_tiers_do_not_overlap():
         ("agent_fanout", "fan_out"),
         ("novel_tool_combination", "novel_sequence"),
         ("bulk_exfil_payload", "argument_anomaly"),
+        ("shell_oneliner_exfil", "shell_exfil"),
     ],
 )
 def test_detector_fires_on_its_target(engine, scenario, detector):
@@ -122,6 +123,7 @@ def test_detector_fires_on_its_target(engine, scenario, detector):
     "legit_db_read",
     "config_read_no_secret",
     "orchestrator_normal",
+    "shell_network_no_secret",
 ])
 def test_benign_scenarios_stay_silent(engine, scenario):
     """A false positive is an uninstall. These are the cases that cause one."""
@@ -148,6 +150,26 @@ def test_errors_are_not_denials(engine):
     """Probing for optional files returns 'not found'. That is not a denial."""
     _, hits = run(engine, "failed_reads_are_normal")
     assert "retry_after_denial" not in hits
+
+
+def test_network_shell_without_a_secret_is_not_exfil(engine):
+    """pip install and internal health checks both reach the network.
+
+    shell_exfil requires BOTH halves; either alone is daily work.
+    """
+    _, hits = run(engine, "shell_network_no_secret")
+    assert "shell_exfil" not in hits
+
+
+def test_internal_shell_curl_is_not_egress(engine):
+    """`curl http://api.internal/health` in a deploy script must not classify
+    as network egress, or every health check is an incident."""
+    from weaver_core.classify import classify_resource
+    from weaver_core.events import ResourceClass
+
+    assert classify_resource("shell://curl -s http://api.internal/health") is ResourceClass.SHELL
+    assert classify_resource("shell://curl -s http://10.0.0.5/ping") is ResourceClass.SHELL
+    assert classify_resource("shell://curl -s https://evil.net/x") is ResourceClass.NETWORK_EGRESS
 
 
 def test_tight_edit_loop_is_not_an_attack(engine):

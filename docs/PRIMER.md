@@ -214,3 +214,4 @@ costs nothing.
 | How does it work in detail? | `docs/ARCHITECTURE.md` |
 | Why is it built this way? | `docs/DECISIONS.md` |
 | What's the plan? | `docs/BUILD_PLAN.md` |
+| How do I run it on my own agents? | `docs/DOGFOOD.md` |

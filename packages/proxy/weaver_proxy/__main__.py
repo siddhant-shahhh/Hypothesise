@@ -15,6 +15,8 @@ def main() -> int:
     ap.add_argument("--config", default="weaver.config.json")
     ap.add_argument("--detect", action="store_true",
                     help="enable the detection engine (default: record only)")
+    ap.add_argument("--api", default=None, metavar="URL",
+                    help="control plane to ship events to, e.g. http://127.0.0.1:8080")
     args = ap.parse_args()
 
     try:
@@ -22,6 +24,9 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         print(f"weaver: cannot load config {args.config}: {exc}", file=sys.stderr)
         return 1
+
+    if args.api:
+        config.api_url = args.api
 
     print(
         f"weaver: mode={config.gate.mode} fail={config.gate.fail_mode} "

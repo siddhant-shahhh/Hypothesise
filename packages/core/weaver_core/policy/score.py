@@ -24,7 +24,7 @@ BLOCK_THRESHOLD = 0.65
 
 # Detectors that block on their own. These describe an action no legitimate
 # workflow performs, so no amount of accumulated trust should talk us out of it.
-SHORT_CIRCUIT = frozenset({"retry_after_denial", "sensitive_then_egress"})
+SHORT_CIRCUIT = frozenset({"retry_after_denial", "sensitive_then_egress", "shell_exfil"})
 
 
 def combine_signals(signals: list[Signal]) -> float:

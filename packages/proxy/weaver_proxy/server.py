@@ -35,6 +35,7 @@ from . import protocol as p
 from .config import ProxyConfig
 from .emit import EventEmitter
 from .gate import Gate
+from .shipper import Shipper
 from .upstream import Upstream
 
 SERVER_INFO = {"name": "weaver-proxy", "version": "0.1.0"}
@@ -77,6 +78,10 @@ class WeaverProxy:
         self.snapshot = GraphSnapshot()
         self.upstreams: dict[str, Upstream] = {}
         self.routes: dict[str, tuple[str, str]] = {}   # exposed name -> (server, real name)
+        self.shipper: Shipper | None = (
+            Shipper(api_url=config.api_url, emitter=self.emitter)
+            if config.api_url else None
+        )
         self.session_id = new_id("sess")
         self.agent_id = config.agent_id or "unknown-agent"
         self.step = 0
@@ -252,6 +257,9 @@ class WeaverProxy:
 
     async def run(self) -> None:
         await self.start_upstreams()
+        if self.shipper:
+            self.shipper.start()
+            print(f"weaver: shipping events to {self.shipper.endpoint}", file=sys.stderr)
         loop = asyncio.get_running_loop()
         reader = asyncio.StreamReader()
         await loop.connect_read_pipe(
@@ -273,4 +281,6 @@ class WeaverProxy:
                 if reply is not None:
                     await self._write(reply)
         finally:
+            if self.shipper:
+                await self.shipper.stop()
             await self.stop_upstreams()
