@@ -1,0 +1,16 @@
+name: repeated_same_read
+description: >
+  Tight edit-test loop hitting the same file eight times in a row. High call
+  velocity on one resource, zero novelty. velocity_anomaly must not fire on
+  a burst that is entirely within the agent's known edges.
+expect: silent
+agent_id: coding-agent-prod
+events:
+  - {tool: {server: fs-mcp,    name: read_file},  resource: "file:///app/src/main.py"}
+  - {tool: {server: fs-mcp,    name: write_file}, resource: "file:///app/src/main.py"}
+  - {tool: {server: shell-mcp, name: exec},       resource: "shell://pytest tests/test_main.py"}
+  - {tool: {server: fs-mcp,    name: read_file},  resource: "file:///app/src/main.py"}
+  - {tool: {server: fs-mcp,    name: write_file}, resource: "file:///app/src/main.py"}
+  - {tool: {server: shell-mcp, name: exec},       resource: "shell://pytest tests/test_main.py"}
+  - {tool: {server: fs-mcp,    name: read_file},  resource: "file:///app/src/main.py"}
+  - {tool: {server: shell-mcp, name: exec},       resource: "shell://pytest tests/test_main.py"}

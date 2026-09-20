@@ -8,13 +8,24 @@ dependencies = ["sqlalchemy>=2.0", "pyyaml>=6.0"]
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.11"]
 
+[tool.uv.workspace]
+members = ["packages/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["packages/core", "packages/store", "packages/proxy", "packages/api"]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["._*", "**/._*"]
 target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+ignore = ["E501"]   # line length is formatting, not correctness
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["E402"]   # sys.path shim must precede imports
 
 [tool.mypy]
 python_version = "3.10"

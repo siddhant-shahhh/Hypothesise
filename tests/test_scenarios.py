@@ -6,8 +6,6 @@ otherwise a detector gets tuned against a broken target.
 
 from pathlib import Path
 
-import pytest
-
 from weaver_core.events import Action, ResourceClass, Status
 from weaver_core.scenario import load_all, load_scenario
 

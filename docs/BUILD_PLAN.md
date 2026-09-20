@@ -187,7 +187,11 @@ customer, so it is the most conservative phase in the plan.
 **Goal:** a real team can install, run and trust it. This phase is unglamorous and
 it is the phase that separates "demo" from "product". Do not compress it.
 
-- [ ] Auth: user accounts, roles (viewer / approver / admin), session management
+- [ ] **Packaging: one-command install** (`pip install weaver` / `npx weaver init`)
+      — ADR-009 makes this the single most important item in M5
+- [ ] Zero-config defaults: works with no `.env`, sensible fallbacks everywhere
+- [ ] `weaver --help` that explains the product, not just the flags
+- [ ] Local dashboard on 127.0.0.1, no accounts (ADR-009 supersedes auth/roles)
 - [ ] Secrets handling: arg redaction rules, retention policy, purge job
 - [ ] Audit log — immutable, covers every decision and every config change
 - [ ] Postgres migration path + a switch; keep SQLite for single-node installs

@@ -144,3 +144,63 @@ consumed it.
 *Consequence:* confidence is now stateless and recomputable from
 `nodes.observations`, so it cannot drift from accumulation error. Pinned by
 `test_single_observation_has_low_confidence`.
+
+---
+
+### ADR-009 — Distribution is self-install, not a VPC deployment
+**Date:** 2026-09-20 · **Status:** accepted · **supersedes ADR-003**
+
+The client is not deploying this internally. They will publish it — source on
+GitHub under their account, package on a public registry — and users install it
+into their own CLI or environment and point their agents at it.
+
+*What this changes:*
+
+| | ADR-003 (superseded) | ADR-009 (now) |
+|---|---|---|
+| Install | Client's ops team, in their VPC | `pip install` / `npx`, any developer |
+| Tenancy | Single-tenant per install | One user, one machine — tenancy is moot |
+| Auth | User accounts, roles | Localhost, no accounts in v1 |
+| Dashboard | Hosted in their network | Local web UI on 127.0.0.1 |
+| The bar | "Can their ops team run it?" | "Does it work in 5 minutes for a stranger?" |
+
+*Consequence — M5 is re-scoped, not shortened.* Roughly a week of auth, roles
+and tenancy work comes out. Roughly the same goes back in, on things that
+barely mattered before: one-command install, sensible defaults with zero
+config, a genuinely good README, clear error messages, `--help` that explains
+itself, and an uninstall that leaves nothing behind. A self-install tool is
+judged in its first five minutes by someone with no context and no patience.
+
+*`tenant_id` stays in the schema.* It costs nothing, and a hosted version later
+is now a plausible direction rather than an excluded one.
+
+---
+
+### ADR-010 — No real agent traffic exists; validation is synthetic until a test agent exists
+**Date:** 2026-09-20 · **Status:** accepted · **carries the project's largest risk**
+
+There is no production agent traffic to learn from. The plan is to build the
+security layer first, then build a separate agent project to test it against.
+
+*The honest consequence:* the M2 exit criterion "≤ 5% false positives" cannot
+be claimed against real traffic, because there is none. What can be claimed is
+"≤ 5% against the scenario suite" — and a suite we wrote ourselves cannot
+surprise us. Detection quality is unproven until real agents run through it.
+
+*Mitigations, in order of value:*
+
+1. **The benign suite is the product's real specification.** It is now 10
+   scenarios against 6 attacks — deliberately weighted toward false positives,
+   because a missed detection is a bug while a false positive is an uninstall.
+   Every benign case encodes a way the detector could be wrong.
+2. **Dogfood early.** Point the proxy at this repo's own Claude Code / Cursor
+   sessions from M1 onward. That is real agent traffic, available immediately,
+   and it costs nothing.
+3. **Build the test-agent project in parallel with M3**, not after M5. It needs
+   to produce traffic while detectors are still cheap to change.
+4. **Restate the contract exit criteria** in terms of the scenario suite plus
+   dogfood traffic. Do not promise a false-positive rate on traffic nobody has
+   seen.
+
+*Open:* which MCP servers the client runs is still unknown. Building against
+GitHub, Postgres and shell as the assumed default (ADR-001).

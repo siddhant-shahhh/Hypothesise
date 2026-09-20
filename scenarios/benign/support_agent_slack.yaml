@@ -1,0 +1,11 @@
+name: support_agent_slack
+description: >
+  Support agent reads the ticket DB and replies in Slack. Crosses database ->
+  communication, which superficially resembles the exfil shape. It is not:
+  the destination is a known internal channel, not external egress.
+expect: silent
+agent_id: support-agent-prod
+events:
+  - {tool: {server: postgres-mcp, name: query},        resource: "postgres://support-db/tickets"}
+  - {tool: {server: postgres-mcp, name: query},        resource: "postgres://support-db/customers"}
+  - {tool: {server: slack-mcp,    name: send_message}, resource: "slack://C0SUPPORT"}

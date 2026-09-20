@@ -1,0 +1,13 @@
+[project]
+name = "weaver-api"
+version = "0.1.0"
+description = "Weaver control plane"
+requires-python = ">=3.10"
+dependencies = ["weaver-core", "weaver-store"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["weaver_api"]

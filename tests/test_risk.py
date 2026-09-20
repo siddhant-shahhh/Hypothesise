@@ -7,9 +7,8 @@ and never below it, distinct-reporter corroboration, and asymmetric trust.
 import math
 
 import pytest
-
-from weaver_core.graph.model import floor_for, lambda_for
 from weaver_core.events import ResourceClass
+from weaver_core.graph.model import floor_for, lambda_for
 from weaver_core.risk.model import (
     Weight,
     confidence_from_observations,
@@ -78,7 +77,7 @@ def test_confidence_rises_and_plateaus():
     assert vals == sorted(vals)            # monotonic
     assert vals[0] == 0.0                  # no observations, no confidence
     assert vals[-1] < 1.0                  # never certain
-    gains = [b - a for a, b in zip(vals, vals[1:])]
+    gains = [b - a for a, b in zip(vals, vals[1:], strict=False)]
     assert gains == sorted(gains, reverse=True)   # diminishing
 
 

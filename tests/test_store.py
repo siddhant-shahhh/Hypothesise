@@ -1,7 +1,6 @@
 """Schema tests — ADR-002 constraints are load-bearing, so they get pinned."""
 
-from sqlalchemy import inspect, insert, select
-
+from sqlalchemy import insert, inspect, select
 from weaver_store.db import get_engine, init_db
 from weaver_store.schema import ALL_TABLES, agents, nodes
 

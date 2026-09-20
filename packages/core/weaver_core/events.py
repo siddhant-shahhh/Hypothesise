@@ -156,7 +156,7 @@ class Event:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Event":
+    def from_dict(cls, d: dict[str, Any]) -> Event:
         dec_raw = d.get("decision") or {}
         out_raw = d.get("outcome") or {}
         return cls(

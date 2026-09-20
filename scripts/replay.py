@@ -25,7 +25,6 @@ from weaver_core.graph.model import (  # noqa: E402
     GraphSnapshot,
     edges_for_event,
     nodes_for_event,
-    resource_node,
     sequence_key,
 )
 from weaver_core.scenario import Scenario, load_all, load_scenario  # noqa: E402
