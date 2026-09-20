@@ -28,6 +28,16 @@ def main() -> int:
     if args.api:
         config.api_url = args.api
 
+    # An ASK verdict has to reach a human. Without a control plane there is
+    # nobody to ask, and the only honest options are "allow everything ASK-worthy"
+    # or "block everything ASK-worthy" — both bad enough to refuse at startup
+    # rather than discover in production.
+    if config.gate.enforcing and not config.api_url:
+        print("weaver: enforce mode needs a control plane for approvals.\n"
+              "        start it with `weaver-api`, then pass --api http://127.0.0.1:8080\n"
+              "        (or set weaver.apiUrl in the config file)", file=sys.stderr)
+        return 2
+
     print(
         f"weaver: mode={config.gate.mode} fail={config.gate.fail_mode} "
         f"budget={config.gate.budget_ms}ms upstreams={len(config.upstreams)}",
@@ -36,9 +46,13 @@ def main() -> int:
     engine = None
     if args.detect:
         from weaver_core.engine import Engine
+        from weaver_core.policy.rules import RuleSet
 
-        engine = Engine()
-        print("weaver: detection engine enabled", file=sys.stderr)
+        engine = Engine(rules=RuleSet.from_config(config.rules))
+        msg = "weaver: detection engine enabled"
+        if engine.rules.rules:
+            msg += f" ({len(engine.rules.rules)} policy rules)"
+        print(msg, file=sys.stderr)
 
     asyncio.run(WeaverProxy(config, engine=engine).run())
     return 0

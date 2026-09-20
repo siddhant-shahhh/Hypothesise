@@ -16,7 +16,8 @@ from .detectors import tier2 as _tier2_detectors  # noqa: F401 — registers the
 from .detectors.base import DetectorContext, SessionWindow, run_all
 from .events import Decision, Event, Verdict
 from .graph.model import Edge, GraphSnapshot, edge_key, edges_for_event, nodes_for_event
-from .policy.score import ScoreInput, decide
+from .policy.rules import RuleSet, describe
+from .policy.score import SHORT_CIRCUIT, ScoreInput, decide
 from .risk.model import Signal
 
 
@@ -26,6 +27,7 @@ class Engine:
     snapshot: GraphSnapshot = field(default_factory=GraphSnapshot)
     windows: dict[str, SessionWindow] = field(default_factory=dict)
     trust: dict[str, float] = field(default_factory=dict)
+    rules: RuleSet = field(default_factory=RuleSet)
     learning: bool = False          # True = fold events into baselines, decide nothing
 
     # -- evaluation ---------------------------------------------------------
@@ -58,6 +60,23 @@ class Engine:
             ),
             self.snapshot,
         )
+        # Operator rules layer over the behavioural verdict. block/ask raise
+        # it; allow lowers it, but never past a CRITICAL detector.
+        has_critical = any(s.detector in SHORT_CIRCUIT for s in signals)
+        ruled, rule = self.rules.apply(ev, decision.verdict, has_critical)
+        if rule is not None and ruled is not decision.verdict:
+            decision.verdict = ruled
+            note = describe(rule)
+            decision.sentence = (
+                f"{ruled.value.title()} by {note}."
+                if not decision.sentence
+                else f"{decision.sentence} Verdict set to {ruled.value} by {note}."
+            )
+            decision.detectors = [
+                *decision.detectors,
+                {"detector": "policy_rule", "weight": 0.0, "detail": note},
+            ]
+
         self._grow_graph(ev)
         return decision, signals
 

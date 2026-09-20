@@ -29,9 +29,29 @@ from weaver_core.risk.model import (
     reinforce,
 )
 
-from .schema import agents, decisions, edges, event_args, events, nodes, signals
+from .schema import (
+    agents,
+    approvals,
+    decisions,
+    edges,
+    event_args,
+    events,
+    nodes,
+    signals,
+)
 
 CORROBORATION_WINDOW_HOURS = 24 * 7
+
+
+def _expired(expires_at: str | None) -> bool:
+    from datetime import datetime, timezone
+
+    if not expires_at:
+        return False
+    try:
+        return datetime.fromisoformat(expires_at) < datetime.now(timezone.utc)
+    except (ValueError, TypeError):
+        return False
 
 
 @dataclass
@@ -286,3 +306,124 @@ class Repo:
         with self.engine.begin() as conn:
             for t in (signals, decisions, event_args, events, edges, nodes, agents):
                 conn.execute(delete(t))
+
+    # -- approvals ----------------------------------------------------------
+
+    def create_approval(self, event_id: str, ttl_seconds: int = 120,
+                        reason: str = "", context: dict | None = None) -> dict:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        row_id = new_id("apr")
+        with self.engine.begin() as conn:
+            conn.execute(insert(approvals).values(
+                id=row_id, tenant_id=self.tenant, event_id=event_id,
+                created_at=now.isoformat(timespec="milliseconds"),
+                expires_at=(now + timedelta(seconds=ttl_seconds)).isoformat(
+                    timespec="milliseconds"),
+                state="pending", reason=reason,
+                context=json.dumps(context or {}),
+            ))
+        return {"id": row_id, "state": "pending", "event_id": event_id}
+
+    def get_approval(self, approval_id: str) -> dict | None:
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(approvals).where(approvals.c.id == approval_id)
+            ).first()
+        if row is None:
+            return None
+        state = row.state
+        # Expiry is evaluated on read rather than by a sweep job, so a pending
+        # row can never be "still pending" past its deadline just because
+        # nothing happened to run.
+        if state == "pending" and _expired(row.expires_at):
+            state = "expired"
+        return {"id": row.id, "event_id": row.event_id, "state": state,
+                "created_at": row.created_at, "expires_at": row.expires_at,
+                "decided_at": row.decided_at, "decided_by": row.decided_by,
+                "reason": row.reason}
+
+    def decide_approval(self, approval_id: str, approve: bool,
+                        who: str = "dashboard") -> dict | None:
+        current = self.get_approval(approval_id)
+        if current is None:
+            return None
+        if current["state"] != "pending":
+            return current          # already decided or expired — never flip it
+
+        with self.engine.begin() as conn:
+            conn.execute(update(approvals).where(approvals.c.id == approval_id).values(
+                state="approved" if approve else "denied",
+                decided_at=utcnow(), decided_by=who,
+            ))
+        return self.get_approval(approval_id)
+
+    def pending_approvals(self, limit: int = 50) -> list[dict]:
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                select(approvals, events.c.agent_id, events.c.tool_server,
+                       events.c.tool_name, events.c.resource_uri,
+                       events.c.resource_class, events.c.step,
+                       decisions.c.sentence, decisions.c.score,
+                       decisions.c.detectors)
+                .join(events, events.c.event_id == approvals.c.event_id, isouter=True)
+                .join(decisions, decisions.c.event_id == approvals.c.event_id,
+                      isouter=True)
+                .where(approvals.c.state == "pending")
+                .order_by(approvals.c.created_at.desc()).limit(limit)
+            ).fetchall()
+        out = []
+        for r in rows:
+            if _expired(r.expires_at):
+                continue
+            # Prefer the event row once it has arrived; fall back to the
+            # context the proxy sent with the request.
+            ctx = {}
+            if r.context:
+                try:
+                    ctx = json.loads(r.context)
+                except (TypeError, ValueError):
+                    ctx = {}
+            out.append({
+                "id": r.id, "event_id": r.event_id, "created_at": r.created_at,
+                "expires_at": r.expires_at,
+                "agent_id": r.agent_id or ctx.get("agent_id") or "unknown",
+                "tool": (f"{r.tool_server}/{r.tool_name}" if r.tool_server
+                         else ctx.get("tool") or ""),
+                "resource": r.resource_uri or ctx.get("resource") or "",
+                "class": r.resource_class or ctx.get("class") or "unknown",
+                "step": r.step, "sentence": r.sentence or r.reason or "",
+                "score": r.score or 0.0,
+                "detectors": json.loads(r.detectors) if r.detectors else [],
+            })
+        return out
+
+    def shadow_report(self, limit: int = 200) -> dict:
+        """What enforce mode WOULD have done, from decisions made in observe mode."""
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                select(decisions, events.c.agent_id, events.c.tool_server,
+                       events.c.tool_name, events.c.resource_uri, events.c.ts)
+                .join(events, events.c.event_id == decisions.c.event_id)
+                .where(decisions.c.mode == "observe",
+                       decisions.c.sentence.like("[observe]%"))
+                .order_by(decisions.c.ts.desc()).limit(limit)
+            ).fetchall()
+            total = conn.execute(select(func.count()).select_from(events)).scalar() or 0
+
+        items = [{
+            "event_id": r.event_id, "ts": r.ts, "agent_id": r.agent_id,
+            "tool": f"{r.tool_server}/{r.tool_name}", "resource": r.resource_uri,
+            "score": r.score, "sentence": r.sentence,
+            "detectors": json.loads(r.detectors) if r.detectors else [],
+        } for r in rows]
+        would_block = sum(1 for i in items if "would have block" in i["sentence"])
+        return {
+            "total_events": total,
+            "would_intervene": len(items),
+            "would_block": would_block,
+            "would_ask": len(items) - would_block,
+            "rate": round(len(items) / total, 5) if total else 0.0,
+            "items": items,
+        }

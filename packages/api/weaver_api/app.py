@@ -21,7 +21,8 @@ from weaver_store.repo import Repo
 STATIC = Path(__file__).parent / "static"
 
 
-def create_app(db_url: str | None = None, engine: Engine | None = None) -> FastAPI:
+def create_app(db_url: str | None = None, engine: Engine | None = None,
+               webhook_url: str | None = None) -> FastAPI:
     app = FastAPI(title="Weaver", version="0.1.0",
                   description="Behavioural security layer for AI agents")
 
@@ -32,6 +33,7 @@ def create_app(db_url: str | None = None, engine: Engine | None = None) -> FastA
 
     app.state.repo = repo
     app.state.engine = eng
+    app.state.webhook = webhook_url or os.environ.get("WEAVER_WEBHOOK", "")
 
     # -- ingest -------------------------------------------------------------
 
@@ -104,6 +106,65 @@ def create_app(db_url: str | None = None, engine: Engine | None = None) -> FastA
                 "registered": tier1_names() + tier2_names(),
                 "errors": detector_errors()}
 
+    # -- approvals ----------------------------------------------------------
+
+    @app.post("/v1/approvals")
+    def create_approval(body: dict[str, Any] = Body(...)) -> dict:
+        """Open an approval request. Called by the proxy on an ASK verdict."""
+        event_id = body.get("event_id")
+        if not event_id:
+            raise HTTPException(400, "event_id is required")
+        row = repo.create_approval(
+            event_id=event_id,
+            ttl_seconds=int(body.get("ttl_seconds", 120)),
+            reason=body.get("reason", ""),
+            context={
+                "agent_id": body.get("agent_id", ""),
+                "tool": body.get("tool", ""),
+                "resource": body.get("resource", ""),
+                "class": body.get("resource_class", ""),
+            },
+        )
+        _notify(app.state.webhook, {
+            "type": "approval_requested",
+            "approval_id": row["id"],
+            "event_id": event_id,
+            "reason": body.get("reason", ""),
+            "agent_id": body.get("agent_id", ""),
+            "tool": body.get("tool", ""),
+            "resource": body.get("resource", ""),
+            "expires_in_seconds": int(body.get("ttl_seconds", 120)),
+        })
+        return row
+
+    @app.get("/v1/approvals")
+    def list_approvals(limit: int = Query(50, le=500)) -> list[dict]:
+        return repo.pending_approvals(limit=limit)
+
+    @app.get("/v1/approvals/{approval_id}")
+    def get_approval(approval_id: str) -> dict:
+        row = repo.get_approval(approval_id)
+        if row is None:
+            raise HTTPException(404, "no such approval")
+        return row
+
+    @app.post("/v1/approvals/{approval_id}/decide")
+    def decide_approval(approval_id: str, body: dict[str, Any] = Body(...)) -> dict:
+        row = repo.decide_approval(
+            approval_id,
+            approve=bool(body.get("approve")),
+            who=body.get("who", "dashboard"),
+        )
+        if row is None:
+            raise HTTPException(404, "no such approval")
+        _notify(app.state.webhook, {"type": "approval_decided", **row})
+        return row
+
+    @app.get("/v1/shadow")
+    def shadow(limit: int = Query(200, le=2000)) -> dict:
+        """What enforce mode WOULD have done. Run this before flipping the switch."""
+        return repo.shadow_report(limit=limit)
+
     @app.get("/healthz")
     def healthz() -> JSONResponse:
         return JSONResponse({"ok": True, "version": "0.1.0"})
@@ -118,6 +179,31 @@ def create_app(db_url: str | None = None, engine: Engine | None = None) -> FastA
         return HTMLResponse(index.read_text())
 
     return app
+
+
+def _notify(url: str, payload: dict[str, Any]) -> None:
+    """Fire-and-forget webhook.
+
+    Deliberately best-effort and never awaited: an approval must not fail
+    because somebody's Slack relay is down, and the proxy is holding a real
+    agent's tool call open while this runs.
+    """
+    if not url:
+        return
+    import json as _json
+    import threading
+    import urllib.request
+
+    def _send() -> None:
+        try:
+            req = urllib.request.Request(
+                url, data=_json.dumps(payload).encode("utf-8"),
+                headers={"content-type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=5).close()
+        except Exception:  # noqa: BLE001 — a dead webhook is not an outage
+            pass
+
+    threading.Thread(target=_send, daemon=True).start()
 
 
 app = create_app()

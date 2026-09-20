@@ -180,6 +180,11 @@ approvals = Table(
     Column("decided_at", String(40)),
     Column("decided_by", String(256)),
     Column("reason", Text),
+    # Denormalised on purpose. The proxy opens an approval the instant it
+    # decides, while the event itself ships on the next batch — joining to
+    # `events` would leave the approver staring at nulls during the window
+    # that matters.
+    Column("context", Text),
     Index("ix_approvals_state", "tenant_id", "state", "created_at"),
 )
 

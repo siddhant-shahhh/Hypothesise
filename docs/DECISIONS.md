@@ -360,3 +360,63 @@ Both halves are required, or `pip install` and every health check would fire.
 world-readable and contains no passwords — a recon signal, not a secret.
 Over-classifying it inflates its risk floor to 0.30 and buys noise.
 `/etc/shadow` stays.
+
+---
+
+### ADR-017 — An unanswered approval denies
+**Date:** 2026-09-20 · **Status:** accepted
+
+An ASK verdict suspends the agent's tool call and opens an approval request.
+If nobody answers within `askTimeoutSeconds` (default 120), the call is
+**denied**.
+
+*Why deny:* the alternative lets an agent obtain any ASK-worthy action by
+waiting. An unattended overnight run would simply outlast every request, and
+ASK would quietly degrade into a logging tier that announces attacks instead of
+stopping them.
+
+*What it costs:* an unattended agent that trips an ASK rule stalls for two
+minutes and then fails. That is a real cost, and it is the reason ASK rules
+should be rare and specific. The failure is clean — a structured MCP error
+naming the rule and the timeout — so the agent can tell its operator why rather
+than failing opaquely.
+
+*Corollary:* enforce mode **refuses to start** without a control plane. Without
+somewhere to send approvals there is nobody to ask, and the only options are
+"allow everything ASK-worthy" or "block everything ASK-worthy" — both bad
+enough to refuse at startup rather than discover in production.
+
+---
+
+### ADR-018 — Allow rules can never override a CRITICAL detector
+**Date:** 2026-09-20 · **Status:** accepted
+
+Policy rules layer over the behavioural verdict, asymmetrically:
+
+* `block` and `ask` rules only RAISE a verdict
+* `allow` rules only LOWER one, and never past a CRITICAL detector
+
+*Why:* an allowlist that can silence `retry_after_denial`, `sensitive_then_egress`
+or `shell_exfil` is a backdoor with a config file in front of it. The realistic
+path to it is mundane — somebody tired of noise writes `always allow shell-mcp`,
+and switches off the product's whole reason for existing without knowing.
+
+A rule with an empty `match` block never fires either, so a typo cannot become
+a fleet-wide block.
+
+---
+
+### ADR-019 — An approval carries its own context
+**Date:** 2026-09-20 · **Status:** accepted
+
+The `approvals` row denormalises agent, tool, resource and class rather than
+joining to `events`.
+
+*Why:* the proxy opens an approval the instant it decides, while the event
+ships on the shipper's next batch — up to two seconds later. Joining left the
+approver looking at `None | | ` for exactly the window that matters. Someone
+asked to approve something they cannot see will either rubber-stamp everything
+or deny everything, and both destroy the feature.
+
+Found by running the flow live rather than by testing the endpoints
+individually, which had all passed.

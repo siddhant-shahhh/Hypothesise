@@ -74,6 +74,17 @@ tr.click:hover{background:var(--panel2)}
 .back{background:none;border:1px solid var(--line);color:var(--dim);
   padding:4px 10px;border-radius:6px;cursor:pointer;font:inherit;margin-bottom:12px}
 .back:hover{color:var(--fg)}
+.btn{border:1px solid var(--line);background:var(--panel2);color:var(--fg);
+  padding:5px 14px;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
+.btn:hover{border-color:var(--dim)}
+.btn.ok{color:var(--allow);border-color:var(--allow)}
+.btn.no{color:var(--block);border-color:var(--block)}
+.btn:disabled{opacity:.4;cursor:default}
+.acts{display:flex;gap:8px;margin-top:8px}
+#pcount{background:var(--ask);color:#000;border-radius:99px;padding:0 6px;
+  font-size:10px;font-weight:700;margin-left:2px}
+#pcount:empty{display:none}
+.ttl{color:var(--ask);font-size:11px}
 @media(max-width:600px){main{padding:12px}td,th{padding:6px}}
 </style>
 </head>
@@ -83,7 +94,9 @@ tr.click:hover{background:var(--panel2)}
   <nav>
     <button data-v="overview" class="on">Overview</button>
     <button data-v="sessions">Sessions</button>
+    <button data-v="approvals">Approvals <span id="pcount"></span></button>
     <button data-v="alerts">Alerts</button>
+    <button data-v="shadow">Shadow</button>
     <button data-v="graph">Graph</button>
     <button id="theme">◐</button>
   </nav>
@@ -185,6 +198,89 @@ async function timeline(){
   app.querySelector('.back').onclick = () => { session = null; sessions(); };
 }
 
+// ---------- approvals ----------
+async function approvals(){
+  const a = await api('/v1/approvals');
+  if(!a.length){
+    app.innerHTML = `<div class="card"><div class="empty">
+      <p>No pending approvals.</p>
+      <p class="dim">An ASK verdict in <code>enforce</code> mode opens one here
+      and suspends the agent's call until you answer.<br>
+      Unanswered requests expire and are <b>denied</b>.</p></div></div>`;
+    return;
+  }
+  app.innerHTML = `<div class="card"><h2>Pending approvals
+    <span class="dim">— an agent is blocked waiting on each of these</span></h2>
+  <table><thead><tr><th>agent</th><th>action</th><th>why</th><th></th></tr></thead>
+  <tbody>${a.map(x=>`<tr data-id="${esc(x.id)}">
+    <td>${esc(x.agent_id||'?')}<div class="faint">step ${x.step??'?'}</div>
+        <div class="ttl" data-exp="${esc(x.expires_at)}"></div></td>
+    <td class="mono">${esc(x.tool)}
+        <div class="faint mono">${esc(short(x.resource))}</div>
+        <div><span class="pill ${esc(x.class)}">${esc(x.class)}</span></div></td>
+    <td>${(x.detectors||[]).map(d=>`<div class="det"><b>${esc(d.detector)}</b></div>`).join('')}
+        <div class="sentence ask">${esc(x.sentence)}</div></td>
+    <td><div class="acts">
+      <button class="btn ok" data-a="1">Approve</button>
+      <button class="btn no" data-a="0">Deny</button>
+    </div></td>
+  </tr>`).join('')}</tbody></table></div>`;
+
+  app.querySelectorAll('button[data-a]').forEach(b => b.onclick = async () => {
+    const tr = b.closest('tr');
+    tr.querySelectorAll('button').forEach(x => x.disabled = true);
+    await fetch(`/v1/approvals/${encodeURIComponent(tr.dataset.id)}/decide`, {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({approve: b.dataset.a === '1', who: 'dashboard'})
+    });
+    render();
+  });
+  tickTTL();
+}
+
+function tickTTL(){
+  document.querySelectorAll('.ttl[data-exp]').forEach(el => {
+    const left = Math.max(0, Math.round((new Date(el.dataset.exp) - Date.now())/1000));
+    el.textContent = left ? `${left}s left` : 'expiring…';
+  });
+}
+setInterval(() => { if(view==='approvals'){ tickTTL(); } }, 1000);
+setInterval(refreshCount, 5000);
+
+async function refreshCount(){
+  try {
+    const a = await api('/v1/approvals');
+    const el = $('#pcount');
+    el.textContent = a.length ? a.length : '';
+  } catch(e){}
+}
+
+// ---------- shadow ----------
+async function shadow(){
+  const s = await api('/v1/shadow');
+  app.innerHTML = `
+  <div class="kpis">
+    <div class="kpi"><div class="n">${s.total_events}</div><div class="l">events seen</div></div>
+    <div class="kpi"><div class="n" style="color:var(--block)">${s.would_block}</div><div class="l">would block</div></div>
+    <div class="kpi"><div class="n" style="color:var(--ask)">${s.would_ask}</div><div class="l">would ask</div></div>
+    <div class="kpi"><div class="n">${(s.rate*100).toFixed(2)}%</div><div class="l">intervention rate</div></div>
+  </div>
+  <div class="card">
+    <h2>What enforce mode would have done</h2>
+    <p class="dim" style="margin-top:-6px">Run in <code>observe</code> for at least
+    two weeks and read this before switching to <code>enforce</code>.
+    On your own normal work, every row here is a false positive.</p>
+    ${s.items.length ? `<table><thead><tr><th>agent</th><th>action</th><th>what it would have done</th></tr></thead>
+    <tbody>${s.items.map(x=>`<tr>
+      <td>${esc(x.agent_id)}<div class="faint">${esc((x.ts||'').replace('T',' ').slice(0,19))}</div></td>
+      <td class="mono">${esc(x.tool)}<div class="faint mono">${esc(short(x.resource))}</div></td>
+      <td>${(x.detectors||[]).map(d=>`<div class="det"><b>${esc(d.detector)}</b></div>`).join('')}
+          <div class="sentence">${esc(x.sentence)}</div></td>
+    </tr>`).join('')}</tbody></table>`
+    : '<div class="empty">nothing would have been intervened on</div>'}
+  </div>`;
+}
+
 // ---------- alerts ----------
 async function alerts(){
   const a = await api('/v1/alerts');
@@ -236,7 +332,7 @@ function emptyHint(){
 }
 
 // ---------- shell ----------
-const views = {overview, sessions, alerts, graph};
+const views = {overview, sessions, approvals, alerts, shadow, graph};
 function render(){
   session = null;
   app.innerHTML = '<div class="empty">loading…</div>';
@@ -259,6 +355,7 @@ try {
   if(saved) document.documentElement.dataset.theme = saved;
 } catch(e){}
 render();
+refreshCount();
 </script>
 </body>
 </html>

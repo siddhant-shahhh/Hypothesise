@@ -32,6 +32,7 @@ from weaver_core.events import (
 from weaver_core.graph.model import GraphSnapshot
 
 from . import protocol as p
+from .approval import ApprovalClient
 from .config import ProxyConfig
 from .emit import EventEmitter
 from .gate import Gate
@@ -78,6 +79,10 @@ class WeaverProxy:
         self.snapshot = GraphSnapshot()
         self.upstreams: dict[str, Upstream] = {}
         self.routes: dict[str, tuple[str, str]] = {}   # exposed name -> (server, real name)
+        self.approvals: ApprovalClient | None = (
+            ApprovalClient(config.api_url, ttl=config.ask_timeout)
+            if config.api_url else None
+        )
         self.shipper: Shipper | None = (
             Shipper(api_url=config.api_url, emitter=self.emitter)
             if config.api_url else None
@@ -205,16 +210,40 @@ class WeaverProxy:
                 }
             })
 
-        # ASK lands in M3. Until then it degrades to allow-and-flag, never to
-        # a silent block.
+        # --- ASK: suspend the call and wait for a human ----------------------
         if decision.verdict is Verdict.ASK:
-            event.decision = Decision(
-                verdict=Verdict.ALLOW,
-                score=decision.score,
-                detectors=decision.detectors,
-                sentence=f"[ask-not-implemented] {decision.sentence}",
-                budget_ms=decision.budget_ms,
-            )
+            if self.approvals is None:
+                # Nobody to ask. Flag it and let it through rather than
+                # pretending a human approved — enforce mode refuses to start
+                # without a control plane, so this only happens in observe.
+                event.decision = Decision(
+                    verdict=Verdict.ALLOW, score=decision.score,
+                    detectors=decision.detectors,
+                    sentence=f"[no-approver] {decision.sentence}",
+                    budget_ms=decision.budget_ms)
+            else:
+                outcome = await self.approvals.request(event, decision.sentence)
+                if not outcome.approved:
+                    event.decision = Decision(
+                        verdict=Verdict.BLOCK, score=decision.score,
+                        detectors=decision.detectors,
+                        sentence=f"{decision.sentence} Approval {outcome.state}: "
+                                 f"{outcome.detail}.",
+                        budget_ms=decision.budget_ms)
+                    event.outcome = Outcome(status=Status.BLOCKED)
+                    self.emitter.emit(event)
+                    code = (p.APPROVAL_DENIED if outcome.state == "denied"
+                            else p.APPROVAL_TIMEOUT)
+                    return p.error(mid, code, event.decision.sentence, {
+                        "weaver": {"verdict": "block",
+                                   "approval_id": outcome.approval_id,
+                                   "approval_state": outcome.state,
+                                   "event_id": event.event_id}})
+                event.decision = Decision(
+                    verdict=Verdict.ALLOW, score=decision.score,
+                    detectors=decision.detectors,
+                    sentence=f"{decision.sentence} {outcome.detail.capitalize()}.",
+                    budget_ms=decision.budget_ms)
 
         # --- forward ---------------------------------------------------------
         up = self.upstreams.get(server)
