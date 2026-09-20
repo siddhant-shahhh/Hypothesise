@@ -119,13 +119,15 @@ async def test_unknown_tool_is_rejected_cleanly():
 
 @pytest.mark.asyncio
 async def test_upstream_error_propagates_and_is_recorded():
-    proxy = WeaverProxy(_config(_upstream("fs-mcp", "--fail-tool", "exec")))
+    proxy = WeaverProxy(_config(_upstream(
+        "fs-mcp", "--fail-tool", "exec", "--fail-text", "command failed: exit 1")))
     try:
         await _boot(proxy)
         await proxy.handle(p.request(3, "tools/call",
                            {"name": "exec", "arguments": {"command": "rm -rf /"}}))
         ev = (await proxy.emitter.drain())[0]
         assert ev.outcome.status.value == "error"
+        assert ev.outcome.error
         assert ev.resource.cls is ResourceClass.SHELL
     finally:
         await proxy.stop_upstreams()
@@ -237,3 +239,58 @@ async def test_engine_decisions_stay_within_budget():
         assert proxy.gate.stats.avg_ms < 20
     finally:
         await proxy.stop_upstreams()
+
+
+@pytest.mark.asyncio
+async def test_upstream_refusal_is_recorded_as_denied():
+    """MCP has no distinct 'denied' status — a refusal and a missing file both
+    come back as an error.
+
+    Nothing set Status.DENIED for the whole of M1-M3, which meant
+    retry_after_denial could never fire on real traffic while still passing
+    its tests, because the scenario YAML sets the status by hand.
+    """
+    from weaver_core.events import Status
+
+    proxy = WeaverProxy(_config(_upstream(
+        "fs-mcp", "--fail-tool", "read_file", "--fail-text", "permission denied")))
+    try:
+        await _boot(proxy)
+        await proxy.handle(p.request(3, "tools/call",
+                           {"name": "read_file", "arguments": {"path": "/app/.env"}}))
+        ev = (await proxy.emitter.drain())[0]
+        assert ev.outcome.status is Status.DENIED
+    finally:
+        await proxy.stop_upstreams()
+
+
+@pytest.mark.asyncio
+async def test_missing_file_is_an_error_not_a_denial():
+    """Absence is not refusal. Agents probe for optional files constantly."""
+    from weaver_core.events import Status
+
+    proxy = WeaverProxy(_config(_upstream(
+        "fs-mcp", "--fail-tool", "read_file", "--fail-text", "ENOENT: no such file")))
+    try:
+        await _boot(proxy)
+        await proxy.handle(p.request(3, "tools/call",
+                           {"name": "read_file", "arguments": {"path": "/app/.nvmrc"}}))
+        ev = (await proxy.emitter.drain())[0]
+        assert ev.outcome.status is Status.ERROR
+    finally:
+        await proxy.stop_upstreams()
+
+
+@pytest.mark.asyncio
+async def test_our_own_block_counts_as_a_denial_for_the_retry_detector():
+    """An agent we just blocked, immediately probing a different route to the
+    same target, is the clearest evasion signal there is."""
+    from weaver_core.detectors.base import SessionWindow
+    from weaver_core.events import Event, Outcome, Resource, ResourceClass, Status, Tool
+
+    w = SessionWindow()
+    w.push(Event(agent_id="a", session_id="s", step=0,
+                 tool=Tool("fs-mcp", "read_file"),
+                 resource=Resource("file:///app/.env", ResourceClass.SECRET),
+                 outcome=Outcome(status=Status.BLOCKED)))
+    assert w.last_denial() is not None

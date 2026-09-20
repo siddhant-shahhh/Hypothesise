@@ -195,8 +195,11 @@ python3 -m weaver_api --demo             # dashboard on :8080
 - Tier 3 graph detectors (M4) — `path_risk`, `blast_radius`
 - LangGraph adapter (M4), auth, packaging, Postgres (M5)
 
-**The honest caveat.** That 7/7 and 0/11 is against a scenario suite we wrote
-ourselves, and a suite we wrote cannot surprise us. There is no real agent
+**The honest caveat.** The scenario numbers are against a suite we wrote
+ourselves, and a suite we wrote cannot surprise us. The red-team suite
+(`redteam/README.md`) runs the real proxy over real MCP servers, and in two
+runs it found a detector firing on `pip install` and another that could never
+fire at all. There is no real agent
 traffic yet (ADR-010). Read it as *"the detectors do what they were designed to
 do"*, not *"detection works"*.
 
@@ -215,3 +218,4 @@ costs nothing.
 | Why is it built this way? | `docs/DECISIONS.md` |
 | What's the plan? | `docs/BUILD_PLAN.md` |
 | How do I run it on my own agents? | `docs/DOGFOOD.md` |
+| How do I attack it? | `redteam/README.md` |

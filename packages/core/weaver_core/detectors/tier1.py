@@ -118,15 +118,19 @@ def novel_sequence(ctx: DetectorContext) -> Signal | None:
         # The pairing is familiar even if this exact triple is not. Firing here
         # would light up on every reordering of an ordinary workflow.
         return None
-    # Graduated by destination. A novel ordering of ordinary reads is how
-    # agents work; a novel ordering that reaches a secret or a database is
-    # worth a look. Flat MEDIUM here sat exactly on the ASK threshold, so
-    # every unseen triple queued a human approval — unusable on real traffic,
-    # where thousands of distinct triples are normal.
-    touches_sensitive = any(e.resource.cls in SENSITIVE_CLASSES for e in recent)
-    weight = Weight.MEDIUM if touches_sensitive else Weight.LOW
+    # LOW, always. Novelty is context, not evidence.
+    #
+    # This was MEDIUM when the sequence touched something sensitive, which put
+    # it exactly on the ASK threshold. The red-team suite, run against real MCP
+    # servers, fired it on `pip install`, on an app reading its own .env at
+    # boot, and on internal health checks — three false positives out of four
+    # benign cases. The scenario suite had shown zero, because a suite we wrote
+    # only contains sequences we thought of.
+    #
+    # A tool that queues a human approval for `pip install` is uninstalled
+    # within a day, and then catches nothing at all.
     seq = " -> ".join(step_key(e) for e in recent)
-    return _sig(ctx, "novel_sequence", weight,
+    return _sig(ctx, "novel_sequence", Weight.LOW,
                 f"tool sequence not seen in {ctx.baseline.event_count} prior events: {seq}")
 
 

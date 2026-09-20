@@ -186,3 +186,29 @@ def classify_action(tool_name: str, resource_cls: ResourceClass = ResourceClass.
     if _EGRESS_TOOL.search(tool_name):
         return Action.EGRESS
     return Action.UNKNOWN
+
+
+# MCP has no distinct "denied" status — a permission refusal and a missing file
+# both come back as an error. Without this, nothing ever marks an event DENIED,
+# and `retry_after_denial` is dead code in production while still passing its
+# tests, because the scenario YAML sets the status by hand.
+_DENIAL_TEXT = re.compile(
+    r"(permission denied|access denied|not permitted|not authori[sz]ed"
+    r"|unauthori[sz]ed|forbidden|EACCES|EPERM|operation not permitted"
+    r"|insufficient (permissions|privileges)|refused by policy"
+    r"|access to .* is denied|read-only file system)", re.I)
+
+# Distinguishing a refusal from an absence matters: agents probe for optional
+# files constantly and get "not found", and treating that as a denial would
+# make every dependency check look like an evasion attempt.
+_ABSENCE_TEXT = re.compile(
+    r"(no such file|not found|does not exist|ENOENT|404)", re.I)
+
+
+def looks_denied(text: str | None) -> bool:
+    """Is this upstream error a refusal rather than an absence?"""
+    if not text:
+        return False
+    if _ABSENCE_TEXT.search(text):
+        return False
+    return bool(_DENIAL_TEXT.search(text))

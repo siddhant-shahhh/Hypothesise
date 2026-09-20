@@ -420,3 +420,64 @@ or deny everything, and both destroy the feature.
 
 Found by running the flow live rather than by testing the endpoints
 individually, which had all passed.
+
+---
+
+### ADR-020 — `retry_after_denial` could never fire; MCP has no "denied"
+**Date:** 2026-09-20 · **Status:** accepted · **the most serious bug found so far**
+
+Nothing in the proxy ever set `Status.DENIED`. The detector called "the
+signature detector" throughout this project — the one designed to be built
+first and demoed first — was dead code in production for all of M1 through M3.
+
+It passed every test, because the scenario YAML sets `status: denied` by hand.
+A hundred and seventy tests, a scenario suite reporting 100% detection, and the
+product's headline capability had never once run on real traffic.
+
+*Root cause:* MCP has no distinct denial status. A permission refusal and a
+missing file both come back as an error, so the proxy recorded both as `ERROR`,
+and `last_denial()` — which correctly refuses to treat an error as a refusal —
+found nothing to match.
+
+*Fix, two parts:*
+
+1. `looks_denied()` classifies upstream error text: "permission denied",
+   "forbidden", "EACCES", "unauthorized" and similar are refusals; "no such
+   file", "ENOENT", "not found" are absences. The distinction matters, because
+   agents probe for optional files constantly and treating absence as refusal
+   would make every dependency check look like evasion.
+2. Our **own** BLOCK now counts as a denial. An agent we just blocked, which
+   immediately probes a different route to the same target, is the clearest
+   evasion signal there is — and it was the case this specifically ignored.
+
+*How it was found:* the red-team suite, driving the real proxy over real MCP
+subprocesses. Nothing in the unit tests or the scenario suite could have found
+it, because both supply the status the detector is looking for.
+
+---
+
+### ADR-021 — Novelty is context, not evidence
+**Date:** 2026-09-20 · **Status:** accepted · supersedes the graduated weighting in ADR-011's era
+
+`novel_sequence` is LOW, always. Additionally, a decision composed **only** of
+LOW signals stays ALLOW, however many of them there are.
+
+*Why:* the first red-team run against real MCP servers fired `novel_sequence`
+on `pip install`, on an application reading its own `.env` at boot, and on
+internal health checks — **three false positives out of four benign cases**.
+The scenario suite had reported zero for weeks, because a suite we wrote only
+contains sequences we thought of, and real tooling produces thousands we did
+not.
+
+*What it costs:* `slow_harvest` — credential reads interleaved with ordinary
+work — is no longer caught. It was only ever caught incidentally by
+`novel_sequence` anyway, and it is genuinely a job for Tier-3 `path_risk` in
+M4, since no individual window in it is anomalous.
+
+*Why that trade is right:* a tool that asks a human to approve `pip install` is
+uninstalled within a day, and a tool that has been uninstalled catches nothing
+at all. A missed detection is a bug; a false positive is an exit.
+
+*The general rule this encodes:* LOW means "unusual", not "wrong". Unusual is
+worth recording, and worth amplifying something else. It is never worth
+interrupting a person over on its own.

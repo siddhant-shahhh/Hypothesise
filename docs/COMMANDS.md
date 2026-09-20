@@ -405,6 +405,23 @@ pytest tests/test_api.py -v
 
 ---
 
+## 4e. Red team
+
+```bash
+python redteam/run.py                # full suite
+python redteam/run.py --only exfil   # by tag
+python redteam/run.py --json         # CI
+```
+
+Drives the real proxy over real MCP subprocesses in a throwaway sandbox with
+fake secrets. This is the suite that finds what `scenarios/` cannot — it caught
+both `novel_sequence` firing on `pip install` and `retry_after_denial` being
+dead code in production.
+
+Full details and the known-gap list: **`redteam/README.md`**
+
+---
+
 ## 5. Run the proxy
 
 ```bash

@@ -16,7 +16,7 @@ import asyncio
 import sys
 from typing import Any
 
-from weaver_core.classify import classify_action, classify_resource
+from weaver_core.classify import classify_action, classify_resource, looks_denied
 from weaver_core.engine import Engine
 from weaver_core.events import (
     Decision,
@@ -40,6 +40,16 @@ from .shipper import Shipper
 from .upstream import Upstream
 
 SERVER_INFO = {"name": "weaver-proxy", "version": "0.1.0"}
+
+
+def _error_text(resp: dict[str, Any]) -> str:
+    """Pull human-readable error text out of either MCP error shape."""
+    if "error" in resp:
+        return str((resp["error"] or {}).get("message", ""))
+    content = (resp.get("result") or {}).get("content") or []
+    return " ".join(
+        str(c.get("text", "")) for c in content if isinstance(c, dict)
+    )[:500]
 
 
 def extract_resource_uri(tool_name: str, args: dict[str, Any]) -> str:
@@ -259,9 +269,16 @@ class WeaverProxy:
             resp = await up.call_tool(real, args)
             latency = int((time.perf_counter() - started) * 1000)
             is_err = "error" in resp or (resp.get("result") or {}).get("isError")
+            status = Status.OK
+            error_text = None
+            if is_err:
+                error_text = _error_text(resp)
+                # A refusal and a missing file both arrive as an error over
+                # MCP. Only a refusal is a denial, and only a denial should
+                # make a later attempt on the same target look like evasion.
+                status = Status.DENIED if looks_denied(error_text) else Status.ERROR
             event.outcome = Outcome(
-                status=Status.ERROR if is_err else Status.OK,
-                latency_ms=latency,
+                status=status, latency_ms=latency, error=error_text,
             )
             self.emitter.emit(event)
             if "error" in resp:

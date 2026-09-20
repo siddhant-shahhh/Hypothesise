@@ -26,6 +26,10 @@ def main():
     ap.add_argument("--name", default="fake-mcp")
     ap.add_argument("--slow-ms", type=int, default=0)
     ap.add_argument("--fail-tool", default="")
+    ap.add_argument("--fail-text", default="permission denied",
+                    help="error text for --fail-tool (denial vs absence)")
+    ap.add_argument("--tools", default="",
+                    help="comma-separated subset to expose (default: all)")
     a = ap.parse_args()
 
     tools = [
@@ -36,6 +40,10 @@ def main():
         {"name": "exec", "description": "Run a command",
          "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}}}},
     ]
+
+    if a.tools:
+        wanted = {t.strip() for t in a.tools.split(",") if t.strip()}
+        tools = [t for t in tools if t["name"] in wanted]
 
     for line in sys.stdin:
         line = line.strip()
@@ -61,7 +69,7 @@ def main():
             if name == a.fail_tool:
                 send({"jsonrpc": "2.0", "id": mid, "result": {
                     "isError": True,
-                    "content": [{"type": "text", "text": "permission denied"}]}})
+                    "content": [{"type": "text", "text": a.fail_text}]}})
             else:
                 send({"jsonrpc": "2.0", "id": mid, "result": {
                     "content": [{"type": "text", "text": f"{a.name}:{name}:ok"}]}})

@@ -35,14 +35,19 @@ class SessionWindow:
         return self.events[-n:] if n else []
 
     def last_denial(self, within: int = 6) -> Event | None:
-        """The most recent DENIED event in the window.
+        """The most recent refusal in the window.
 
-        Strictly `denied`, never `error`. Agents probe for optional files all
-        the time and get 'not found'; treating that as a denial would make
-        every dependency check look like an attack.
+        Counts both an upstream DENIED and our own BLOCKED. An agent that we
+        just blocked and that immediately probes a different route to the same
+        target is the single clearest evasion signal there is — and for a
+        while it was the one case this deliberately ignored.
+
+        Never `error`. Agents probe for optional files constantly and get "not
+        found"; treating absence as refusal would make every dependency check
+        look like an attack.
         """
         for ev in reversed(self.events[-within:]):
-            if ev.outcome.status is Status.DENIED:
+            if ev.outcome.status in (Status.DENIED, Status.BLOCKED):
                 return ev
         return None
 
