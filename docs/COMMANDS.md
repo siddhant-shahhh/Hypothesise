@@ -3,6 +3,12 @@
 Every command here has been run and verified. Copy-paste ready.
 Run everything from the repo root: `/Volumes/Seagate/AI_Layer`
 
+New to the project? Read **`docs/PRIMER.md`** first — ten minutes, the whole thing.
+
+**Status:** M0–M3 built. 175 tests. Observe mode is still the right setting —
+enforcement works but its real-world false-positive rate is unmeasured until
+you have dogfooded it (`docs/DOGFOOD.md`).
+
 ---
 
 ## 1. Setup — once
@@ -82,7 +88,7 @@ works from the repo with any interpreter that has pytest and pyyaml.
 ## 2. Tests
 
 ```bash
-pytest                       # all 83
+pytest                       # all 175
 pytest -v                    # with names
 pytest tests/test_gate.py    # one file
 pytest -k "fail_open"        # match by name
@@ -90,7 +96,7 @@ pytest -x                    # stop at first failure
 pytest --lf                  # only what failed last time
 ```
 
-Expected: `83 passed`
+Expected: `175 passed`
 
 ### What each test file covers
 
@@ -103,7 +109,10 @@ Expected: `83 passed`
 | `test_protocol.py` | 7 | JSON-RPC framing; `decode()` never raises |
 | `test_emit.py` | 4 | `emit()` never blocks, even when the queue is full |
 | `test_gate.py` | 9 | Budget, fail-open, observe mode, no-sentence-no-block |
-| `test_proxy_e2e.py` | 16 | End-to-end against **real MCP subprocesses** |
+| `test_proxy_e2e.py` | 19 | End-to-end against **real MCP subprocesses** |
+| `test_shipper.py` | 7 | Batching to the API; drop-don't-grow when it's down |
+| `test_rules.py` | 11 | Policy rules; `allow` can never override a CRITICAL |
+| `test_approvals.py` | 15 | Approval flow, timeout-denies, enforce-mode startup |
 
 ### The four tests worth knowing by name
 
@@ -177,15 +186,19 @@ anomalies, so novelty detectors only mean anything once normal is established.
 Current numbers:
 
 ```
-detection    6/6  (100%)   target >= 80%
-false pos    0/11 (0%)     target <= 5%
-on target    5/6            fired via the detector designed for it
+detection    7/8  (88%)    target >= 80%
+false pos    0/12 (0%)     target <= 5%
+on target    7/8           fired via the detector designed for it
 ```
 
-`on target` is the honest number. `slow_credential_harvest` is caught, but by
-`novel_sequence` rather than `path_risk` — which is a Tier-3 detector that
-lands in M4. Exit code is 0 only when both thresholds are met, so this works in
-CI:
+8 attack scenarios, 12 benign.
+
+`slow_credential_harvest` is the one miss, and it is honest: it needs Tier-3
+`path_risk`, which lands in M4. It used to be "caught" incidentally by
+`novel_sequence`, until that detector was demoted for firing on `pip install`
+(ADR-021).
+
+Exit code is 0 only when both thresholds are met, so this works in CI:
 
 ```bash
 python3 scripts/replay.py --all --quiet && echo "M2 criteria met"
@@ -267,10 +280,43 @@ explanation sentence:
 | `scope_widening` | HIGH | Sensitivity climbs monotonically over 4 steps, ending somewhere sensitive |
 | `fan_out` | HIGH | Two or more agents invoked that were never invoked before |
 | `novel_edge` | MEDIUM | First use of a tool by this agent, against a sensitive resource |
-| `novel_sequence` | MEDIUM / LOW | Unseen 3-gram. MEDIUM if it touches a sensitive class, LOW otherwise |
+| `shell_exfil` | CRITICAL | One shell command that both reaches the network **and** references a secret |
+| `novel_sequence` | LOW | Unseen 3-gram. **Never triggers on its own** — see the corroboration floor below |
 
-The two CRITICAL detectors **short-circuit to BLOCK** regardless of score — they
-describe actions no legitimate workflow performs.
+The three CRITICAL detectors **short-circuit to BLOCK** regardless of score —
+they describe actions no legitimate workflow performs, and no amount of
+accumulated trust argues them down.
+
+### The corroboration floor
+
+A decision made **only** of LOW signals stays ALLOW, however many there are.
+
+LOW means "unusual", not "wrong" — a novel tool ordering, an odd hour, an
+unfamiliar parameter name. Each is worth recording and worth amplifying
+something else; none is worth interrupting a person over alone.
+
+This was added after the red-team suite fired `novel_sequence` on `pip
+install`, on an app reading its own `.env` at boot, and on internal health
+checks — three false positives out of four benign cases, while the scenario
+suite reported zero (ADR-021).
+
+### Denials
+
+`retry_after_denial` needs to know a call was *refused*. MCP has no denial
+status — a permission refusal and a missing file both come back as an error —
+so the proxy classifies the error text:
+
+| Error text | Recorded as | Why |
+|---|---|---|
+| `permission denied`, `forbidden`, `EACCES`, `unauthorized` | `DENIED` | a refusal |
+| `no such file`, `ENOENT`, `not found` | `ERROR` | an absence — agents probe for optional files constantly |
+
+Weaver's **own** BLOCK also counts as a denial. An agent we just blocked that
+immediately probes another route is the clearest evasion signal there is.
+
+> Nothing set `DENIED` at all until the red-team suite found it (ADR-020).
+> `retry_after_denial` passed every test while being dead code in production,
+> because the scenario YAML supplies the status by hand.
 
 ### Detector-specific tests
 
@@ -303,6 +349,7 @@ inline — still in `observe` mode, so nothing is blocked.
 
 Four statistical detectors run in the same pass as Tier 1 (ADR-012), weighted
 lower because "unusual" is weaker evidence than "nobody legitimate does this".
+None short-circuits, and the three LOW ones cannot trigger a verdict alone.
 
 | Detector | Weight | Fires when |
 |---|---|---|
@@ -349,11 +396,13 @@ python3 -m weaver_api --db sqlite:///./x.db # different database
 The database defaults to `~/.weaver/weaver.db` — deliberately **not** in your
 project (ADR-013). Override with `WEAVER_HOME` or `--db`.
 
-### The four screens
+### The six screens
 
 - **Overview** — counts, which detectors are firing, riskiest resources, recent alerts
 - **Sessions** — every agent run; click one for its timeline
 - **Alerts** — everything above ALLOW, with evidence and explanation
+- **Approvals** — pending requests with a live countdown and approve/deny
+- **Shadow** — what enforce mode would have done; read before flipping
 - **Graph** — the behavioural graph, node colour by risk
 
 **Session timeline is the screen that matters.** Step by step: tool, resource,
@@ -369,7 +418,9 @@ curl -s localhost:8080/v1/sessions/<session_id>
 curl -s localhost:8080/v1/alerts
 curl -s localhost:8080/v1/graph
 curl -s localhost:8080/v1/agents
-curl -s localhost:8080/v1/detectors
+curl -s localhost:8080/v1/detectors    # registered, and any crashing silently
+curl -s localhost:8080/v1/approvals    # pending approvals
+curl -s localhost:8080/v1/shadow       # what enforce would have done
 ```
 
 Send events in:
@@ -410,15 +461,196 @@ pytest tests/test_api.py -v
 ```bash
 python redteam/run.py                # full suite
 python redteam/run.py --only exfil   # by tag
+python redteam/run.py --only evasion
 python redteam/run.py --json         # CI
 ```
 
-Drives the real proxy over real MCP subprocesses in a throwaway sandbox with
-fake secrets. This is the suite that finds what `scenarios/` cannot — it caught
-both `novel_sequence` firing on `pip install` and `retry_after_denial` being
-dead code in production.
+Drives the **real proxy** over **real MCP subprocesses** in a throwaway sandbox
+with fake secrets. Exit code is 0 only when every non-gap attack is caught and
+no benign case fires.
 
-Full details and the known-gap list: **`redteam/README.md`**
+```
+attacks caught   6/6
+false positives  0/4
+known gaps       4 still open, 1 now caught
+```
+
+### Why it exists separately from `scenarios/`
+
+The scenario suite is synthetic — hand-written events with hand-written
+statuses. It is fast and it runs in CI, and it cannot surprise us, because it
+only contains attacks we thought of, shaped the way we assumed.
+
+In its first two runs this suite found two things `scenarios/` had been
+reporting as fine for weeks:
+
+| Found | The scenario suite said |
+|---|---|
+| `novel_sequence` fired on 3 of 4 benign cases — `pip install`, app boot reading `.env`, internal health checks | 0% false positives |
+| `retry_after_denial` **could never fire at all** — nothing set `Status.DENIED` | 100% detection |
+
+Neither was findable without running the real code path.
+
+### Known gaps
+
+Attacks marked `known_gap` report loudly and do **not** fail the build.
+
+| Gap | Why it gets through | Where |
+|---|---|---|
+| `slow_harvest` | no individual window is anomalous | Tier-3 `path_risk`, M4 |
+| `dns_exfil` | DNS is not HTTP egress | needs a DNS-aware classifier |
+| `destructive_shell` | `rm -rf` isn't exfiltration; nothing covers destruction | open |
+| `config_tamper` | writing config is ordinary; intent is invisible | open |
+
+A gap written down is a backlog item. A gap not written down is a surprise
+during a customer's incident.
+
+### Safety
+
+`redteam/sandbox.py` builds a temp directory with **fake** secrets — obvious
+nonsense strings, never anything resembling a real key. Nothing outside the
+temp directory is touched, and the tree is deleted afterwards. The "external"
+hosts (`example-evil.net`) do not resolve, so no traffic leaves the machine.
+
+Adding attacks, and why every attack needs a benign counterpart:
+**`redteam/README.md`**
+
+---
+
+## 4f. Enforcement — approvals and policy rules (M3)
+
+> **`observe` is still the right setting.** Read the Shadow tab for two weeks
+> before switching anything to `enforce`.
+
+### Policy rules
+
+Explicit operator intent, layered over behavioural scoring. Put them in
+`weaver.config.json`:
+
+```json
+{
+  "mcpServers": { "...": {} },
+  "weaver": {"mode": "observe", "apiUrl": "http://127.0.0.1:8080"},
+  "rules": [
+    {"name": "confirm secret reads", "action": "ask",
+     "reason": "credentials need a human",
+     "match": {"resource_class": "secret"}},
+
+    {"name": "no shell against prod db", "action": "block",
+     "match": {"tool_server": "shell-mcp", "resource_uri": "postgres://prod-*"}},
+
+    {"name": "research agent may egress", "action": "allow",
+     "match": {"agent_id": "research-agent", "resource_class": "network_egress"}}
+  ]
+}
+```
+
+Matchable fields: `agent_id`, `tool_server`, `tool_name`, `tool`,
+`resource_uri`, `resource_class`, `action`, `status`. Values are globs,
+case-insensitive. **Every** condition in a `match` block must hold.
+
+**Rules are asymmetric, deliberately:**
+
+| Action | Effect |
+|---|---|
+| `block` | only ever **raises** a verdict |
+| `ask` | only ever **raises** a verdict |
+| `allow` | only ever **lowers** one — and **never past a CRITICAL detector** |
+
+An allowlist that could silence `shell_exfil` would be a backdoor with a config
+file in front of it, and the realistic path to one is mundane: somebody tired
+of noise writes "always allow shell-mcp" (ADR-018).
+
+A rule with an empty `match` block never fires, so a typo cannot become a
+fleet-wide block.
+
+```bash
+pytest tests/test_rules.py -v
+```
+
+### Approvals
+
+An `ask` verdict in **enforce** mode suspends the agent's tool call, opens an
+approval, and waits.
+
+```bash
+weaver-api --port 8080                                    # terminal 1
+weaver-proxy --config weaver.config.json --detect \
+             --api http://127.0.0.1:8080                  # terminal 2
+```
+
+With `WEAVER_MODE=enforce`, the Approvals tab shows a live countdown and
+approve/deny buttons. The agent is genuinely blocked until you answer.
+
+```bash
+curl -s localhost:8080/v1/approvals            # what's pending
+curl -s -X POST localhost:8080/v1/approvals/<id>/decide \
+  -H 'content-type: application/json' -d '{"approve":true,"who":"pratham"}'
+```
+
+| Outcome | What the agent gets |
+|---|---|
+| approved | the call proceeds; it never knows it waited |
+| denied | MCP error `-31002` naming the rule and who denied it |
+| **timeout (120s)** | MCP error `-31001` — **an unanswered approval denies** |
+
+Timeout denies on purpose (ADR-017). Otherwise an agent running unattended
+overnight obtains any ask-worthy action by simply outlasting the request, and
+ASK degrades into a tier that announces attacks instead of stopping them. The
+cost is real: keep `ask` rules rare and specific.
+
+`askTimeoutSeconds` in config changes the deadline.
+
+> **Enforce mode refuses to start without a control plane.** No control plane
+> means nobody to ask, and the only options left are "allow everything
+> ask-worthy" or "block everything" — both bad enough to refuse at startup
+> rather than discover in production.
+
+### Webhook
+
+```bash
+weaver-api --webhook https://your-relay.example.com/hook
+```
+
+Fires on `approval_requested` and `approval_decided`. Fire-and-forget — a dead
+webhook never fails an approval. Wire your own Slack/Discord/PagerDuty relay.
+
+### Shadow report — read this before enabling enforce
+
+```bash
+curl -s localhost:8080/v1/shadow | python -m json.tool | head -30
+```
+
+Or the **Shadow** tab. Every decision observe mode made but did not act on:
+
+```
+total_events      4812
+would_block          2
+would_ask            9
+rate             0.23%
+```
+
+On your own normal work, **every row here is a false positive.** If
+`would_block` is not 0 after two weeks, do not flip to enforce — fix the
+detector.
+
+### Environment overrides
+
+Env beats the config file, so you can flip one run without editing something
+that is in version control:
+
+```bash
+WEAVER_MODE=enforce weaver-proxy --config weaver.config.json --detect --api http://127.0.0.1:8080
+```
+
+| Variable | Overrides |
+|---|---|
+| `WEAVER_MODE` | `weaver.mode` |
+| `WEAVER_FAIL_MODE` | `weaver.failMode` |
+| `WEAVER_DECISION_BUDGET_MS` | `weaver.budgetMs` |
+| `WEAVER_API_URL` | `weaver.apiUrl` |
+| `WEAVER_HOME` | database location (default `~/.weaver`) |
+| `WEAVER_WEBHOOK` | `--webhook` |
 
 ---
 
@@ -433,6 +665,21 @@ It speaks MCP on stdio and waits for input. Startup line goes to stderr:
 ```
 weaver: mode=observe fail=open budget=50ms upstreams=1
 ```
+
+### Ship events to the dashboard
+
+```bash
+weaver-proxy --config weaver.config.json --detect --api http://127.0.0.1:8080
+```
+
+On startup the proxy prints `weaver: shipping events to ...` on stderr. No line
+means `apiUrl` is unset and events stay in memory — which is what "the
+dashboard is empty" almost always means.
+
+The shipper batches every ~2s, retries three times with backoff, then **drops
+the batch and counts it**. It never blocks your agent and never grows without
+bound: a dead control plane must not become unbounded memory inside the
+security layer (ADR-015).
 
 ### Drive it by hand
 
@@ -478,9 +725,10 @@ has — adopting Weaver is moving a block of JSON, not learning a format.
 | `failMode` | `open` \| `closed` | What happens if the engine fails. `open` = let traffic through. |
 | `budgetMs` | int | Hard decision deadline. Exceeded → fail mode applies. |
 | `agentId` | string | Overrides the name from the client handshake. |
+| `apiUrl` | URL | Control plane to ship events and approvals to. |
+| `askTimeoutSeconds` | int | Approval deadline. Expiry **denies** (ADR-017). |
 
-Env vars override the file: `WEAVER_MODE`, `WEAVER_FAIL_MODE`,
-`WEAVER_DECISION_BUDGET_MS`.
+Env vars override the file — see the table in section 4f.
 
 ---
 
@@ -539,6 +787,10 @@ git status --short
 | `PYTHON="$(command -v python3)"` fails | `python3` is a shell **alias** | `PYTHON="$(python3 -c 'import sys; print(sys.executable)')" bash scripts/dev-setup.sh` |
 | setup says OK but import fails | `pip` and `python3` are different Pythons | `python3 scripts/doctor.py`, then `PYTHON="$(command -v python3)" bash scripts/dev-setup.sh` |
 | tests pass but imports fail | expected — pytest uses `pythonpath`, not the install | only matters outside the repo |
+| dashboard stays empty | proxy has no `--api` / `apiUrl` | check stderr for `weaver: shipping events to ...` |
+| `enforce mode needs a control plane` | enforce with no `apiUrl` | start `weaver-api`, pass `--api` |
+| an agent hangs ~2 min then fails | an `ask` rule with nobody approving | answer in the Approvals tab, or make the rule narrower |
+| approvals show `unknown` agent | control plane unreachable when the request opened | check `weaver-api` is up |
 
 ---
 
@@ -547,7 +799,7 @@ git status --short
 ```bash
 bash scripts/dev-setup.sh                       # install
 python3 scripts/doctor.py                       # diagnose import problems
-pytest                                          # 83 tests
+pytest                                          # 175 tests
 ruff check packages scripts tests               # lint
 mypy packages/core/weaver_core                  # types
 python3 scripts/replay.py --all --quiet         # eval suite (exit 0 = criteria met)
