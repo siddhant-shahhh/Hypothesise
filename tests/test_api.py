@@ -114,3 +114,43 @@ def test_alerts_carry_evidence_and_a_sentence(client):
     top = blocks[0]
     assert top["detectors"]
     assert len(top["sentence"]) > 20
+
+
+def test_trust_endpoints_roundtrip(client):
+    """Trust must survive a proxy restart (ADR-023), so it goes through the
+    control plane rather than living only in the proxy."""
+    c, _ = client
+    r = c.post("/v1/trust", json=[
+        {"agent_id": "a1", "trust": 0.2, "zone": "hot",
+         "hot_signals": 4, "quarantined": True}])
+    assert r.json()["saved"] == 1
+
+    rows = c.get("/v1/trust").json()
+    assert rows[0]["agent_id"] == "a1"
+    assert rows[0]["quarantined"] is True
+
+    agents = c.get("/v1/agents").json()
+    assert agents[0]["zone"] == "hot"
+
+
+def test_release_clears_a_quarantine(client):
+    """Only a human clears a quarantine — time alone never does."""
+    c, _ = client
+    c.post("/v1/trust", json=[{"agent_id": "a1", "trust": 0.0, "zone": "hot",
+                               "hot_signals": 5, "quarantined": True}])
+    row = c.post("/v1/agents/a1/release").json()
+    assert row["quarantined"] is False
+    assert row["hot_signals"] == 0
+    assert row["trust"] >= 0.70
+
+
+def test_release_unknown_agent_is_404(client):
+    c, _ = client
+    assert c.post("/v1/agents/nope/release").status_code == 404
+
+
+def test_dashboard_has_the_agents_view(client):
+    c, _ = client
+    body = c.get("/").text
+    for token in ("agents", "QUARANTINED", "Release", "tmeter"):
+        assert token in body

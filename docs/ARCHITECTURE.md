@@ -242,13 +242,25 @@ are not statistics.
 
 ### Tier 3 — graph-level
 
-Ships in M4. These are the ones that only exist because risk lives on the graph.
+Built in M4. These only exist because risk lives on the graph (ADR-004), and
+`resource_reputation` is the first detector whose input comes from a *different
+agent's* history.
 
-| # | Detector | Method |
-|---|---|---|
-| 10 | `path_risk` | cumulative risk along the edges traversed this session |
-| 11 | `resource_reputation` | inherited risk from the target node — **the stigmergy signal** |
-| 12 | `blast_radius` | count of sensitive resources reachable within k hops from the agent's current position |
+| # | Detector | Weight | Method |
+|---|---|---|---|
+| 11 | `path_risk` | HIGH | 3+ distinct `secret` resources in one session. No window is anomalous; the accumulation is. |
+| 12 | `resource_reputation` | MEDIUM | Target node carries effective risk ≥ 0.40 — **the stigmergy signal** |
+| 13 | `blast_radius` | LOW | 5+ distinct sensitive resources reached this session |
+| 14 | `egress_after_broad_access` | HIGH | Outbound call after ranging across 3+ sensitive resources |
+
+`resource_reputation` is gated twice to stay honest: the threshold (0.40) sits
+above every class floor, so merely *being* a secret never fires it, and risk is
+damped by confidence, so one sighting of a new node cannot condemn it.
+
+**This tier needs the snapshot refresh loop** (ADR-024). The proxy's snapshot
+was never refreshed from the control plane, so node risk stayed at its class
+floor and reputation could not fire at all — the central differentiator had no
+path into the hot path.
 
 ---
 
@@ -387,6 +399,23 @@ Per-agent `trust ∈ [0,1]`, and a zone derived from it:
 | 🟢 **COLD** | > 0.70 | Normal actions auto-approved. Verbose logging off. |
 | 🟡 **WARM** | 0.30 – 0.70 | Sensitive-class actions require approval. Full arg capture on. |
 | 🔴 **HOT** | < 0.30 | Sensitive actions blocked. After N further signals → session quarantined. |
+
+**Zones gate sensitive classes; they do not shade thresholds** (ADR-022). A
+WARM agent needs approval for `secret`, `shell`, `database` and
+`network_egress`; its ordinary work is untouched. Making every detector more
+sensitive as trust falls would turn one bad score into false positives across
+the whole workload.
+
+**Gating only ever raises a verdict.** A trust score can make an agent less
+free; it can never make a flagged action allowed.
+
+**Quarantine** follows `QUARANTINE_AFTER` (3) signals that land while the agent
+is *already* HOT — the signal that pushed it into HOT is what the zone itself
+expresses. A quarantined agent is blocked from sensitive classes and must have
+every other action approved. Only a human clears it; time never does.
+
+**Trust persists** through the control plane (ADR-023), because in-memory trust
+makes restarting the proxy an escape hatch.
 
 **Trust moves asymmetrically — fast down, slow up.** This is correct for security
 and it is a deliberate choice, not an accident:

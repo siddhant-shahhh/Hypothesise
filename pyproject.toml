@@ -35,7 +35,7 @@ members = ["packages/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-pythonpath = ["packages/core", "packages/store", "packages/proxy", "packages/api"]
+pythonpath = ["packages/core", "packages/store", "packages/proxy", "packages/api", "packages/adapters/langgraph"]
 norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]

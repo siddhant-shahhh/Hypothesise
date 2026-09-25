@@ -31,6 +31,7 @@ import sandbox as sandbox_mod  # noqa: E402
 from weaver_core.engine import Engine  # noqa: E402
 from weaver_core.events import Verdict  # noqa: E402
 from weaver_core.scenario import load_all  # noqa: E402
+from weaver_core.trust.model import TrustStore  # noqa: E402
 from weaver_proxy import protocol as p  # noqa: E402
 from weaver_proxy.config import ProxyConfig  # noqa: E402
 from weaver_proxy.gate import GateConfig  # noqa: E402
@@ -80,6 +81,8 @@ async def run_attack(attack, engine: Engine, denied_first: bool) -> dict:
     )
     proxy = WeaverProxy(cfg, engine=engine)
     engine.reset_sessions()
+    # Each attack is independent; trust damage must not leak between them.
+    engine.trust = TrustStore()
 
     fired, verdicts, detectors = False, [], []
     try:

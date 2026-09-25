@@ -162,6 +162,10 @@ agents = Table(
     Column("trust", Float, nullable=False, server_default="1.0"),
     Column("zone", String(16), nullable=False, server_default="cold"),
     Column("baseline_state", String(16), nullable=False, server_default="learning"),
+    # Quarantine survives a proxy restart (ADR-023). Restarting is the first
+    # thing anyone does when a tool starts blocking them.
+    Column("hot_signals", Integer, nullable=False, server_default="0"),
+    Column("quarantined", Integer, nullable=False, server_default="0"),
     Column("event_count", Integer, nullable=False, server_default="0"),
     Column("first_seen", String(40), nullable=False),
     Column("last_seen", String(40), nullable=False),

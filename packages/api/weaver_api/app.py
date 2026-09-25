@@ -160,6 +160,27 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
         _notify(app.state.webhook, {"type": "approval_decided", **row})
         return row
 
+    # -- trust --------------------------------------------------------------
+
+    @app.get("/v1/trust")
+    def trust_state() -> list[dict]:
+        """Trust for every known agent. The proxy reads this on startup."""
+        return repo.trust_rows()
+
+    @app.post("/v1/trust")
+    def save_trust(body: list[dict[str, Any]] = Body(...)) -> dict:
+        """Proxy pushes trust state here as it changes."""
+        return {"saved": repo.save_trust(body)}
+
+    @app.post("/v1/agents/{agent_id}/release")
+    def release(agent_id: str) -> dict:
+        """Clear an agent's quarantine. Deliberately a human-only action."""
+        row = repo.release_agent(agent_id)
+        if row is None:
+            raise HTTPException(404, f"no such agent: {agent_id}")
+        _notify(app.state.webhook, {"type": "agent_released", **row})
+        return row
+
     @app.get("/v1/shadow")
     def shadow(limit: int = Query(200, le=2000)) -> dict:
         """What enforce mode WOULD have done. Run this before flipping the switch."""

@@ -8,11 +8,12 @@ from .emit import EventEmitter
 from .gate import Gate, GateConfig
 from .server import WeaverProxy
 from .shipper import Shipper
+from .sync import ControlPlaneSync
 from .upstream import Upstream, UpstreamConfig
 
 __version__ = "0.1.0"
 
 __all__ = [
     "EventEmitter", "Gate", "GateConfig", "ProxyConfig", "Upstream",
-    "Shipper", "UpstreamConfig", "WeaverProxy", "__version__",
+    "ControlPlaneSync", "Shipper", "UpstreamConfig", "WeaverProxy", "__version__",
 ]

@@ -42,6 +42,11 @@ def run(eng: Engine, name: str):
         (ROOT / "scenarios" / "attack" / f"{name}.yaml").exists() else "benign") / f"{name}.yaml"
     sc = load_scenario(path)
     eng.reset_sessions()
+    # Independent hypothetical -> clean trust. See test_trust.py for the
+    # carries-forward behaviour, which is what production does.
+    from weaver_core.trust.model import TrustStore
+
+    eng.trust = TrustStore()
     fired, hits = False, []
     for ev in sc.events:
         decision, signals = eng.evaluate(ev)
@@ -78,7 +83,11 @@ def test_all_detectors_registered():
         "novel_sequence", "novel_edge", "fan_out", "shell_exfil",
     }
     assert set(tier2_names()) == {
+        # tier 2 — statistical
         "argument_anomaly", "novel_arg_shape", "velocity_anomaly", "off_hours",
+        # tier 3 — graph-level
+        "path_risk", "resource_reputation", "blast_radius",
+        "egress_after_broad_access",
     }
 
 

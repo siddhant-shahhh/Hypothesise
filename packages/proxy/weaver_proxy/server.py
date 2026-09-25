@@ -37,6 +37,7 @@ from .config import ProxyConfig
 from .emit import EventEmitter
 from .gate import Gate
 from .shipper import Shipper
+from .sync import ControlPlaneSync
 from .upstream import Upstream
 
 SERVER_INFO = {"name": "weaver-proxy", "version": "0.1.0"}
@@ -96,6 +97,11 @@ class WeaverProxy:
         self.shipper: Shipper | None = (
             Shipper(api_url=config.api_url, emitter=self.emitter)
             if config.api_url else None
+        )
+        self.sync: ControlPlaneSync | None = (
+            ControlPlaneSync(api_url=config.api_url, snapshot=self.snapshot,
+                             trust=engine.trust)
+            if config.api_url and engine is not None else None
         )
         self.session_id = new_id("sess")
         self.agent_id = config.agent_id or "unknown-agent"
@@ -306,6 +312,14 @@ class WeaverProxy:
         if self.shipper:
             self.shipper.start()
             print(f"weaver: shipping events to {self.shipper.endpoint}", file=sys.stderr)
+        if self.sync:
+            # Load before serving: an agent must not get a clean slate simply
+            # because the proxy restarted (ADR-023).
+            agents = await self.sync.load_trust_once()
+            nodes = await self.sync.pull_graph_once()
+            self.sync.start()
+            print(f"weaver: restored trust for {agents} agents, "
+                  f"{nodes} graph nodes", file=sys.stderr)
         loop = asyncio.get_running_loop()
         reader = asyncio.StreamReader()
         await loop.connect_read_pipe(
@@ -327,6 +341,8 @@ class WeaverProxy:
                 if reply is not None:
                     await self._write(reply)
         finally:
+            if self.sync:
+                await self.sync.stop()
             if self.shipper:
                 await self.shipper.stop()
             await self.stop_upstreams()

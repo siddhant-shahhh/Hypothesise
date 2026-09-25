@@ -102,6 +102,18 @@ enforced in code, not just documented.
 | `novel_edge` | MEDIUM | First use of a tool, against a sensitive resource |
 | `novel_sequence` | MEDIUM/LOW | Unseen 3-gram; MEDIUM only if it touches something sensitive |
 
+**Tier 3** — graph-level. Only possible because risk lives on the graph.
+
+| Detector | Weight | Fires when |
+|---|---|---|
+| `path_risk` | HIGH | 3+ distinct secrets in one session — no window is odd, the accumulation is |
+| `egress_after_broad_access` | HIGH | Outbound call after ranging across 3+ sensitive resources |
+| `resource_reputation` | MEDIUM | This resource was flagged before, **possibly by another agent** |
+| `blast_radius` | LOW | 5+ distinct sensitive resources reached this session |
+
+`resource_reputation` is the stigmergy payoff — an agent that has never
+misbehaved inherits suspicion the moment it touches somewhere others got caught.
+
 **Tier 2** — statistical. Describe actions that are merely unusual.
 
 | Detector | Weight | Fires when |
@@ -187,13 +199,29 @@ python3 -m weaver_api --demo             # dashboard on :8080
 - Ingest API, persistence, dashboard with session timeline and graph view
 - **7/7 attack scenarios caught, 0/11 false positives**
 
+**Also built:** enforcement with approvals and policy rules (M3); adaptive
+trust, Tier-3 graph detectors and the LangGraph adapter (M4).
+
+### Adaptive trust
+
+Every agent carries a trust score. Signals cost trust fast; clean operation
+earns it back slowly.
+
+| Zone | trust | Effect |
+|---|---|---|
+| 🟢 COLD | > 0.70 | normal operation |
+| 🟡 WARM | 0.30–0.70 | sensitive actions need approval |
+| 🔴 HOT | < 0.30 | sensitive actions blocked |
+| ⛔ quarantined | 3 signals while already HOT | sensitive blocked, everything else needs approval |
+
+Zones gate **sensitive classes only** — ordinary work is never touched by a
+trust score (ADR-022). Trust survives a proxy restart (ADR-023). Quarantine is
+cleared only by a human.
+
 **Not built yet:**
 
-- Enforcement (M3) — `ASK` doesn't actually pause anything, there's no approval
-  workflow, and `observe` mode is still the only sane setting
-- Adaptive trust (M4) — the COLD/WARM/HOT machine is designed, not wired
-- Tier 3 graph detectors (M4) — `path_risk`, `blast_radius`
-- LangGraph adapter (M4), auth, packaging, Postgres (M5)
+- M5: one-command install, Postgres, a real migration runner, load testing,
+  failure drills, docs
 
 **The honest caveat.** The scenario numbers are against a suite we wrote
 ourselves, and a suite we wrote cannot surprise us. The red-team suite

@@ -298,8 +298,10 @@ class Repo:
         with self.engine.begin() as conn:
             rows = conn.execute(select(agents)).fetchall()
         return [{"agent_id": r.agent_id, "trust": r.trust, "zone": r.zone,
+                 "hot_signals": r.hot_signals, "quarantined": bool(r.quarantined),
                  "baseline_state": r.baseline_state, "events": r.event_count,
-                 "last_seen": r.last_seen} for r in rows]
+                 "last_seen": r.last_seen,
+                 "trust_updated": r.trust_updated} for r in rows]
 
     def clear(self) -> None:
         """Wipe everything. Test and demo helper."""
@@ -398,6 +400,71 @@ class Repo:
                 "detectors": json.loads(r.detectors) if r.detectors else [],
             })
         return out
+
+    # -- trust --------------------------------------------------------------
+
+    def trust_rows(self) -> list[dict]:
+        """Everything the proxy needs to restore trust state on startup."""
+        with self.engine.begin() as conn:
+            rows = conn.execute(select(agents)).fetchall()
+        return [{"agent_id": r.agent_id, "trust": r.trust, "zone": r.zone,
+                 "hot_signals": r.hot_signals,
+                 "quarantined": bool(r.quarantined),
+                 "trust_updated": r.trust_updated} for r in rows]
+
+    def save_trust(self, states: list[dict]) -> int:
+        """Persist trust state. Called by the proxy as it changes."""
+        now = utcnow()
+        saved = 0
+        with self.engine.begin() as conn:
+            for st in states:
+                aid = st.get("agent_id")
+                if not aid:
+                    continue
+                existing = conn.execute(
+                    select(agents).where(agents.c.agent_id == aid)).first()
+                values = {
+                    "trust": float(st.get("trust", 1.0)),
+                    "zone": st.get("zone", "cold"),
+                    "hot_signals": int(st.get("hot_signals", 0)),
+                    "quarantined": int(bool(st.get("quarantined", False))),
+                    "trust_updated": now,
+                }
+                if existing is None:
+                    conn.execute(insert(agents).values(
+                        agent_id=aid, tenant_id=self.tenant,
+                        baseline_state="learning", event_count=0,
+                        first_seen=now, last_seen=now, **values))
+                else:
+                    conn.execute(update(agents)
+                                 .where(agents.c.agent_id == aid).values(**values))
+                saved += 1
+        return saved
+
+    def release_agent(self, agent_id: str) -> dict | None:
+        """Clear a quarantine. Only ever done by a human."""
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(agents).where(agents.c.agent_id == agent_id)).first()
+            if row is None:
+                return None
+            conn.execute(update(agents).where(agents.c.agent_id == agent_id).values(
+                quarantined=0, hot_signals=0,
+                trust=max(row.trust, 0.70), zone="warm",
+                trust_updated=utcnow()))
+        return self.agent(agent_id)
+
+    def agent(self, agent_id: str) -> dict | None:
+        with self.engine.begin() as conn:
+            r = conn.execute(
+                select(agents).where(agents.c.agent_id == agent_id)).first()
+        if r is None:
+            return None
+        return {"agent_id": r.agent_id, "trust": r.trust, "zone": r.zone,
+                "hot_signals": r.hot_signals, "quarantined": bool(r.quarantined),
+                "baseline_state": r.baseline_state, "events": r.event_count,
+                "first_seen": r.first_seen, "last_seen": r.last_seen,
+                "trust_updated": r.trust_updated}
 
     def shadow_report(self, limit: int = 200) -> dict:
         """What enforce mode WOULD have done, from decisions made in observe mode."""

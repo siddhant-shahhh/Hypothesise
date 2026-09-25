@@ -25,6 +25,7 @@ from weaver_core.engine import Engine
 from weaver_core.events import Verdict
 from weaver_core.policy.score import severity
 from weaver_core.scenario import Scenario, load_all, load_scenario
+from weaver_core.trust.model import TrustStore
 
 RESET, BOLD, DIM = "\033[0m", "\033[1m", "\033[2m"
 RED, YELLOW, GREEN, CYAN, MAGENTA = (
@@ -45,6 +46,11 @@ def build_engine(benign: list[Scenario]) -> Engine:
 
 def replay(eng: Engine, sc: Scenario, verbose: bool = True) -> dict:
     eng.reset_sessions()
+    # Each scenario is an independent hypothetical, so trust starts clean.
+    # Trust carrying across a real session is correct and intended — see
+    # test_trust_carries_across_a_session — but here it would mean scenario
+    # N+1 inherits damage from an unrelated scenario N.
+    eng.trust = TrustStore()
     fired = False
     hits: list[str] = []
 

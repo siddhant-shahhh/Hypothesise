@@ -481,3 +481,101 @@ at all. A missed detection is a bug; a false positive is an exit.
 *The general rule this encodes:* LOW means "unusual", not "wrong". Unusual is
 worth recording, and worth amplifying something else. It is never worth
 interrupting a person over on its own.
+
+---
+
+### ADR-022 — Trust zones gate sensitive classes; they do not shade thresholds
+**Date:** 2026-09-25 · **Status:** accepted
+
+A WARM agent needs approval for `secret`, `shell`, `database` and
+`network_egress` actions. A HOT agent is blocked from them. Ordinary work —
+source code, config, reads and writes — is untouched at every trust level.
+
+*Rejected:* lowering the ASK and BLOCK thresholds as trust falls, so every
+detector becomes more sensitive at once.
+
+*Why:* that is the `novel_sequence` failure with extra steps. One bad trust
+score would turn into false positives across the agent's entire workload, and
+the blast radius of a scoring mistake would be everything the agent does rather
+than the handful of actions that actually matter. It also makes "why was this
+blocked" unanswerable — the verdict depends on a number that moved for reasons
+several actions ago.
+
+*Consequence:* gating is coarse. An agent at 0.69 trust and one at 0.31 are
+treated identically, and a sensitive action is either gated or not. Predictable
+beats expressive here.
+
+*Also:* gating only ever RAISES a verdict. A trust score can make an agent less
+free; it can never make a flagged action allowed.
+
+---
+
+### ADR-023 — Trust persists through the control plane
+**Date:** 2026-09-25 · **Status:** accepted
+
+Trust, zone, hot-signal count and quarantine live in the `agents` table. The
+proxy loads them before serving its first request and pushes changes back every
+15 seconds and on shutdown.
+
+*Why:* in-memory trust makes restarting the proxy an escape hatch, and
+restarting is the first thing anyone does when a tool starts blocking them. An
+agent that earned its way to HOT must not get a clean slate for free.
+
+*Quarantine is cleared only by a human* — `POST /v1/agents/{id}/release`. Trust
+recovers with time; quarantine does not, because the thing that caused it was
+repeated signals after the agent had already lost most of its trust.
+
+*Consequence:* the proxy degrades without a control plane rather than failing.
+It starts with default trust, everything still works, and the sync loop picks
+up when the API returns.
+
+---
+
+### ADR-024 — The proxy refreshes its graph snapshot from the control plane
+**Date:** 2026-09-25 · **Status:** accepted · **a gap in the original design**
+
+`ControlPlaneSync` pulls `/v1/graph` every 30 seconds and replaces the proxy's
+in-memory snapshot.
+
+*Why it was missing:* ARCHITECTURE §1 rule 1 says the data plane never queries
+the database to decide — it reads an in-memory snapshot "which the control
+plane refreshes on a timer". That timer was described and never built. Node
+risk in the proxy therefore stayed at its class floor forever, and
+`resource_reputation` could not fire regardless of what any other agent had
+done. **The product's central differentiator had no path into the hot path.**
+
+Nothing caught it because every test and both suites run the engine in-process,
+where the snapshot is the same object the engine writes to. Only a real proxy
+talking to a real control plane has two copies.
+
+*Replaced, not merged.* The control plane is authoritative and has already
+applied decay on read; merging would let a stale local risk value outlive the
+real one.
+
+*Consequence:* resource reputation lags by up to 30 seconds. Acceptable — risk
+decays over hours, and the alternative is a database read on the request path.
+
+---
+
+### ADR-025 — The LangGraph adapter is advisory, not enforcing
+**Date:** 2026-09-25 · **Status:** accepted
+
+`WeaverCallbackHandler` records and scores in-process tool calls. By default a
+BLOCK is recorded and the call proceeds. `raise_on_block=True` raises
+`ToolBlocked` instead.
+
+*Why advisory:* a LangChain callback cannot veto a tool call. By the time
+`on_tool_start` runs the framework is committed, and raising may leave the graph
+in a state the author did not plan for — after side effects have already
+happened. Claiming enforcement here would be claiming something the framework
+does not offer.
+
+*Honest framing for the docs and for the client:* the adapter is for
+**visibility** into calls that never cross MCP. The proxy is where blocking
+actually works. A deployment that needs enforcement routes its dangerous tools
+through MCP.
+
+*The adapter imports nothing from langchain*, so `weaver_langgraph` installs
+and tests without it, and emits the identical event shape into the identical
+engine — including the refusal-vs-absence classification from ADR-020, so
+`retry_after_denial` works through this door too.

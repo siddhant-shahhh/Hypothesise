@@ -85,6 +85,15 @@ tr.click:hover{background:var(--panel2)}
   font-size:10px;font-weight:700;margin-left:2px}
 #pcount:empty{display:none}
 .ttl{color:var(--ask);font-size:11px}
+.zone{display:inline-block;padding:1px 9px;border-radius:99px;font-size:11px;
+  font-weight:600;letter-spacing:.4px}
+.zone.cold{color:var(--allow);border:1px solid var(--allow)}
+.zone.warm{color:var(--ask);border:1px solid var(--ask)}
+.zone.hot{color:var(--block);border:1px solid var(--block)}
+.tmeter{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;
+  margin-top:6px;max-width:160px}
+.tmeter i{display:block;height:100%}
+.quar{color:var(--block);font-size:11px;font-weight:600;letter-spacing:.4px}
 @media(max-width:600px){main{padding:12px}td,th{padding:6px}}
 </style>
 </head>
@@ -94,6 +103,7 @@ tr.click:hover{background:var(--panel2)}
   <nav>
     <button data-v="overview" class="on">Overview</button>
     <button data-v="sessions">Sessions</button>
+    <button data-v="agents">Agents</button>
     <button data-v="approvals">Approvals <span id="pcount"></span></button>
     <button data-v="alerts">Alerts</button>
     <button data-v="shadow">Shadow</button>
@@ -196,6 +206,38 @@ async function timeline(){
         ${e.sentence ? `<div class="sentence ${esc(e.verdict)}">${esc(e.sentence)}</div>` : ''}</td>
   </tr>`).join('')}</tbody></table></div>`;
   app.querySelector('.back').onclick = () => { session = null; sessions(); };
+}
+
+// ---------- agents & trust ----------
+async function agents(){
+  const a = await api('/v1/agents');
+  if(!a.length){ app.innerHTML = emptyHint(); return; }
+  const zc = z => z === 'hot' ? 'var(--block)' : z === 'warm' ? 'var(--ask)' : 'var(--allow)';
+  app.innerHTML = `<div class="card">
+    <h2>Agents <span class="dim">— trust falls fast on signals and recovers
+      slowly; zones gate sensitive actions only</span></h2>
+  <table><thead><tr><th>agent</th><th>zone</th><th>trust</th>
+    <th>events</th><th></th></tr></thead>
+  <tbody>${a.map(x=>`<tr data-id="${esc(x.agent_id)}">
+    <td>${esc(x.agent_id)}
+        <div class="faint">baseline: ${esc(x.baseline_state||'?')}</div>
+        ${x.quarantined ? '<div class="quar">QUARANTINED</div>' : ''}</td>
+    <td><span class="zone ${esc(x.zone||'cold')}">${esc((x.zone||'cold').toUpperCase())}</span>
+        ${x.hot_signals ? `<div class="faint">${x.hot_signals} signals while hot</div>` : ''}</td>
+    <td>${(x.trust??1).toFixed(2)}
+        <div class="tmeter"><i style="width:${(x.trust??1)*100}%;background:${zc(x.zone)}"></i></div></td>
+    <td class="dim">${x.events??0}</td>
+    <td>${x.quarantined
+      ? '<button class="btn ok" data-rel="1">Release</button>'
+      : '<span class="faint">—</span>'}</td>
+  </tr>`).join('')}</tbody></table></div>`;
+
+  app.querySelectorAll('button[data-rel]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const id = b.closest('tr').dataset.id;
+    await fetch(`/v1/agents/${encodeURIComponent(id)}/release`, {method:'POST'});
+    render();
+  });
 }
 
 // ---------- approvals ----------
@@ -332,7 +374,7 @@ function emptyHint(){
 }
 
 // ---------- shell ----------
-const views = {overview, sessions, approvals, alerts, shadow, graph};
+const views = {overview, sessions, agents, approvals, alerts, shadow, graph};
 function render(){
   session = null;
   app.innerHTML = '<div class="empty">loading…</div>';
