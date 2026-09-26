@@ -5,6 +5,9 @@ description = "Weaver persistence — SQLAlchemy Core, Postgres-portable"
 requires-python = ">=3.10"
 dependencies = ["sqlalchemy>=2.0"]
 
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

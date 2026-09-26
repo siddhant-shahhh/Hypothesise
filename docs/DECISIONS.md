@@ -579,3 +579,139 @@ through MCP.
 and tests without it, and emits the identical event shape into the identical
 engine — including the refusal-vs-absence classification from ADR-020, so
 `retry_after_denial` works through this door too.
+
+---
+
+### ADR-026 — Migrations are a hand-rolled versioned runner, not Alembic
+**Date:** 2026-09-25 · **Status:** accepted
+
+`weaver_store/migrate.py`: a numbered list of Python steps and one
+`schema_version` table. `init_db()` runs it instead of `create_all()`.
+
+*The bug it exists for:* `metadata.create_all()` creates missing TABLES and
+silently ignores missing COLUMNS. M4 added `agents.hot_signals` and
+`agents.quarantined`; any database created before that would never have gained
+them. The proxy would start, fail to persist quarantine state, and say nothing —
+an agent could escape a quarantine by restarting, and no error would appear
+anywhere.
+
+*Rejected:* Alembic. It is the standard and a client's engineer would expect
+it, but it is a real dependency with its own config in a product whose install
+story is the thing it gets judged on (ADR-009), and its autogenerate is
+unreliable across two backends when the whole point of ADR-002 is portability.
+
+*The rules, which matter more than the runner:*
+
+- append, never edit — a shipped migration has already run on someone's machine
+- every step must be safe to re-run (`test_every_migration_is_safe_to_rerun`)
+- SQL must work on SQLite and Postgres, or branch on the dialect
+
+`weaver migrate --check` exits non-zero when migrations are pending, so it works
+as a deploy gate, and `/readyz` returns 503 on a stale schema.
+
+---
+
+### ADR-027 — One package, one command
+**Date:** 2026-09-25 · **Status:** accepted, **name superseded by ADR-030**
+
+One `pip install` installs everything and provides a single `weaver`
+command (the *distribution* name is unresolved — ADR-030): `api`, `proxy`, `doctor`, `migrate`, `version`.
+
+*Why:* a stranger who has just installed this has one thing to discover, and
+`weaver --help` tells them the rest. Four separately-installed packages and two
+executables is a worse first five minutes, and ADR-009 makes those five minutes
+the thing the product is judged on.
+
+*What is preserved:* the internal split under `packages/` is unchanged.
+`weaver_core` still imports nothing (ADR-005) and is still separable for the
+ownership carve-out (ADR-007) — users simply never see the seam. The wheel is
+assembled from the six internal packages by one hatchling target.
+
+**Unverified here.** pip cannot write into this sandbox's virtualenv, so the
+wheel has never actually been built. The configuration is statically validated
+(every listed package exists and has an `__init__.py`), and
+`scripts/ops/release-check.sh` builds the wheel, checks its contents, installs
+it into a throwaway virtualenv and runs the CLI from there. **Run that before
+believing this ADR.**
+
+---
+
+### ADR-028 — Postgres is supported but untested
+**Date:** 2026-09-25 · **Status:** accepted · **honest limitation**
+
+`get_engine` handles `postgresql://` with pool settings appropriate to a
+threaded API plus the proxy's sync loop, behind the `weaver[postgres]` extra.
+
+*Why an extra:* the driver is a build dependency on many systems, and nearly
+everyone uses the SQLite path. Requiring it would tax every install for a
+feature most users never touch. A missing driver raises an error naming the
+exact fix.
+
+*Untested, and stated as such.* There is no Postgres or Docker in this
+environment. `test_postgres_without_the_driver_says_what_to_install` covers the
+error path and nothing covers the real one. `docker-compose.yml` has a
+`postgres` profile that should work and has never run.
+
+Do not tell a client Postgres is supported until someone has run
+`weaver migrate` and the test suite against a real server. Writing the switch
+is the easy half; the half that finds bugs is the half not done.
+
+---
+
+### ADR-029 — The proxy is not containerised
+**Date:** 2026-09-25 · **Status:** accepted
+
+The Dockerfile builds the **control plane** only. The proxy is expected to run
+on the host.
+
+*Why:* the proxy runs as a subprocess of the user's MCP client and spawns the
+upstream MCP servers as its own children, over stdio. In a container it is cut
+off from both — the client cannot start it, and it cannot reach the filesystem
+or shell the upstream servers operate on. A containerised proxy would be a
+proxy with nothing to proxy.
+
+*Consequence:* deployment is asymmetric and the docs must say so plainly.
+`docker compose up` gives you the dashboard; the proxy is installed with
+installed from the repo on whatever machine the agent runs on. That is also the
+honest shape of the product — the data plane belongs next to the agent.
+
+---
+
+### ADR-030 — The name `weaver` is taken on PyPI; a distribution name is now blocking
+**Date:** 2026-09-26 · **Status:** open — **blocks publishing**
+
+`weaver` is an existing package on PyPI (version 0.1), and `weaver-core` is
+someone else's at 0.4.17 — which is also one of our internal package names.
+`pip install weaver` therefore installs a stranger's code, not this project.
+
+*How it was found:* `docs/OPERATIONS.md` and `PRIMER.md`, written in M5, told
+the reader to run `pip install weaver`. Somebody did. pip resolved it against
+PyPI, reported "Requirement already satisfied: weaver ... (0.1)" — note the
+version, which is not ours — and there was no `weaver` command afterwards
+because that package does not provide one.
+
+*Two distinct failures, worth separating:*
+
+1. **A documentation error.** M5 built the packaging and then documented it as
+   if it were published. Nothing had been published, and the install command
+   was fiction presented as fact. Docs must never describe a step that has not
+   been performed — every other command in `COMMANDS.md` was run before being
+   written down, and this one was not.
+2. **A name collision**, which the error surfaced early and cheaply. Finding it
+   from a stray `pip install` costs nothing; finding it on publish day costs a
+   rename across the repo, the docs and anything already shared.
+
+*Consequences:*
+
+- No `pip install <name>` appears in any document until a distribution name is
+  chosen, checked against PyPI, and published. Corrected in OPERATIONS,
+  PRIMER, COMMANDS and CLAUDE.md.
+- Open question #4 (the product name) moves from deferred to **blocking**.
+- The distribution name and the import names can differ — `weaver_core` as an
+  import is fine even if `weaver-core` is taken as a distribution. Only what
+  goes in `[project] name` and `[project.scripts]` has to be unique.
+- Check the CLI name too: a `weaver` binary on PATH could collide with
+  something a user already has.
+
+*Not yet decided,* so the codename stays `weaver` throughout the code until a
+replacement is chosen. One find-replace changes it.

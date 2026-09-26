@@ -1,0 +1,50 @@
+# Control plane only. The proxy runs on the host, as a subprocess of your MCP
+# client — see docs/DOGFOOD.md.
+#
+#   docker compose up -d          SQLite, data in a named volume
+#   docker compose --profile postgres up -d
+services:
+  weaver-api:
+    build: .
+    image: weaver:0.1.0
+    ports:
+      - "127.0.0.1:8080:8080"   # localhost only: no auth yet (ADR-009)
+    volumes:
+      - weaver-data:/data
+    environment:
+      WEAVER_HOME: /data
+      # WEAVER_WEBHOOK: https://your-relay.example.com/hook
+    restart: unless-stopped
+
+  # Optional Postgres. Untested against a real server (ADR-028) — the switch
+  # works, the combination has not been verified.
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: weaver
+      POSTGRES_USER: weaver
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - weaver-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weaver"]
+      interval: 10s
+      retries: 5
+
+  weaver-api-postgres:
+    profiles: ["postgres"]
+    build: .
+    image: weaver:0.1.0
+    command: ["api", "--host", "0.0.0.0", "--port", "8080",
+              "--db", "postgresql+psycopg://weaver:change-me@postgres:5432/weaver"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  weaver-data:
+  weaver-pg:

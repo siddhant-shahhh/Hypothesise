@@ -23,7 +23,7 @@ from pathlib import Path
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.pool import StaticPool
 
-from .schema import metadata
+from .schema import metadata  # noqa: F401
 
 # Outside the user's project, deliberately. A tool people install should not
 # drop a database into the directory they are working in — it pollutes their
@@ -52,9 +52,30 @@ def get_engine(url: str | None = None, echo: bool = False) -> Engine:
             poolclass=StaticPool if in_memory else None,
         )
 
+    # Postgres. Pool settings matter here in a way they do not for SQLite: the
+    # API serves on a thread pool and the proxy's sync loop is a second client.
+    if url.startswith(("postgresql", "postgres:")):
+        try:
+            import psycopg  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "Postgres support needs the driver:\n"
+                "    pip install 'weaver-store[postgres]'"
+            ) from exc
+        return create_engine(url, echo=echo, future=True,
+                             pool_pre_ping=True, pool_size=5, max_overflow=5)
+
     return create_engine(url, echo=echo, future=True)
 
 
 def init_db(engine: Engine) -> None:
-    """Create all tables. Replaced by a versioned migration runner in M5."""
-    metadata.create_all(engine)
+    """Bring the schema up to date.
+
+    Runs versioned migrations rather than `create_all` alone. create_all
+    creates missing TABLES but silently ignores missing COLUMNS, so a database
+    created before M4 would never gain `agents.hot_signals` — the proxy would
+    start, fail to persist quarantine state, and say nothing about it.
+    """
+    from .migrate import migrate
+
+    migrate(engine)

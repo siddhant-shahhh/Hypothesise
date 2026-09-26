@@ -20,12 +20,16 @@ it can damage the Homebrew install. If imports fail: `python scripts/doctor.py`.
 ## Checks — all three must pass
 
 ```bash
-pytest                                  # 175
-python scripts/replay.py --all --quiet  # scenario suite, exit 0 = criteria met
+pytest                                  # 247
+python scripts/replay.py --all --quiet  # scenarios, exit 0 = criteria met
 python redteam/run.py                   # red team, exit 0 = nothing got through
+python scripts/ops/drills.py            # every safety guarantee still holds
 ruff check packages scripts tests redteam
 mypy packages/core/weaver_core
 ```
+
+Before any release: `bash scripts/ops/release-check.sh` — rebuilds .venv from
+scratch, which is how both undeclared dependencies were caught.
 
 ## Rules that are load-bearing
 
@@ -68,8 +72,16 @@ redteam/                     real proxy, real MCP subprocesses, fake secrets
 
 ## Status
 
-M0–M3 built. M4 (adaptive trust, Tier-3 `path_risk`) and M5 (packaging,
-Postgres, hardening) are not.
+M0–M5 built. One installable distribution, one CLI: `weaver api`, `proxy`,
+`doctor`, `migrate`, `version`. See `docs/OPERATIONS.md`.
+
+**Nothing is published, and `weaver` is taken on PyPI** (ADR-030). Never write
+`pip install weaver` in docs or tell anyone to run it — it installs an
+unrelated package. Install with `bash scripts/dev-setup.sh`.
+
+**Migrations are append-only** — never edit a shipped one, and every step must
+be safe to re-run. `create_all` does not add columns to existing tables, which
+is the bug ADR-026 exists for.
 
 **The real gap is data, not features.** Everything so far runs against fixtures
 and hand-written YAML. No real agent has ever connected — there is no
@@ -111,4 +123,6 @@ and that number is the one nobody has yet.
 - New detector → benign counterpart scenario first.
 - Changed a dependency → `rm -rf .venv && bash scripts/dev-setup.sh` before
   trusting the suite. That is how both undeclared dependencies were caught.
-- Working codename `weaver`; the product name is undecided.
+- Working codename `weaver`; the product name is undecided **and now blocking**
+  — the PyPI name is taken, so a distribution name must be chosen before
+  anything ships (ADR-030).

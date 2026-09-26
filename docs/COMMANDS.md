@@ -5,9 +5,12 @@ Run everything from the repo root: `/Volumes/Seagate/AI_Layer`
 
 New to the project? Read **`docs/PRIMER.md`** first — ten minutes, the whole thing.
 
-**Status:** M0–M3 built. 175 tests. Observe mode is still the right setting —
-enforcement works but its real-world false-positive rate is unmeasured until
-you have dogfooded it (`docs/DOGFOOD.md`).
+**Status:** M0–M5 built. 247 tests. Observe mode is still the right setting —
+enforcement works but its real-world false-positive rate is unmeasured until you
+have dogfooded it (`docs/DOGFOOD.md`).
+
+Running it beyond a laptop — metrics, migrations, containers, load, drills,
+release gate: **`docs/OPERATIONS.md`**
 
 ---
 
@@ -18,6 +21,10 @@ cd /Volumes/Seagate/AI_Layer
 bash scripts/dev-setup.sh
 source .venv/bin/activate
 ```
+
+> **Do not run `pip install weaver`.** Nothing is published, and that name
+> belongs to an unrelated package on PyPI (ADR-030). It installs a stranger's
+> code and gives you no `weaver` command.
 
 The script **creates a virtualenv at `.venv`** and installs everything into it.
 
@@ -35,13 +42,15 @@ The documented escape hatch, `--break-system-packages`, can damage a Homebrew
 installation. Do not use it. A venv is the correct answer and costs one
 command.
 
-After activating, these all work:
+After activating, one command does everything:
 
 ```bash
+weaver --help
+weaver api --demo                                    # dashboard on :8080
+weaver proxy --config weaver.config.json --detect    # MCP interception
+weaver migrate --check                               # schema state
+weaver doctor                                        # diagnose the environment
 pytest
-python -m weaver_api --demo
-weaver-api --demo              # console entry point
-weaver-proxy --config weaver.config.example.json --detect
 ```
 
 Or skip activation and use the full path:

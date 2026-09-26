@@ -39,8 +39,16 @@ def load_demo(repo, engine: Engine) -> int:
 
     repo.clear()
     n = 0
+    from weaver_core.trust.model import TrustStore
+
     for sc in scenarios:
         engine.reset_sessions()
+        # Each scenario is an independent hypothetical, so trust starts clean.
+        # Without this, damage from the attack scenarios leaks into unrelated
+        # benign ones and the demo dashboard looks like it is full of false
+        # positives. Trust carrying across a real session is correct and is
+        # what production does.
+        engine.trust = TrustStore()
         for ev in sc.events:
             decision, sigs = engine.evaluate(ev)
             ev.decision = decision

@@ -154,3 +154,38 @@ def test_dashboard_has_the_agents_view(client):
     body = c.get("/").text
     for token in ("agents", "QUARANTINED", "Release", "tmeter"):
         assert token in body
+
+
+def test_readyz_reports_schema_state(client):
+    c, _ = client
+    body = c.get("/readyz").json()
+    assert body["ok"] is True
+    assert body["schema"]["up_to_date"] is True
+
+
+def test_metrics_is_prometheus_text(client):
+    c, app = client
+    from weaver_api.demo import load_demo
+
+    load_demo(app.state.repo, app.state.engine)
+    r = c.get("/metrics")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/plain")
+
+    body = r.text
+    for metric in ("weaver_events_total", "weaver_decisions_total",
+                   "weaver_agents", "weaver_approvals_pending",
+                   "weaver_detector_errors_total"):
+        assert metric in body
+    # every metric carries HELP and TYPE, or scrapers complain
+    assert body.count("# HELP") >= 6
+    assert body.count("# TYPE") >= 6
+
+
+def test_healthz_touches_nothing():
+    """A liveness probe that queries the database turns a slow query into an
+    outage. This one must answer with a broken database."""
+    app = create_app(db_url="sqlite:///:memory:")
+    c = TestClient(app)
+    app.state.repo.engine.dispose()
+    assert c.get("/healthz").json()["ok"] is True

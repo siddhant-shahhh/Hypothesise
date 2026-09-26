@@ -180,6 +180,7 @@ carved out.
 ```bash
 bash scripts/dev-setup.sh        # creates .venv (PEP 668 makes this mandatory)
 source .venv/bin/activate
+weaver api --demo                # then open http://127.0.0.1:8080
 pytest                                   # 135 tests
 python3 scripts/replay.py --all          # the eval suite
 python3 -m weaver_api --demo             # dashboard on :8080
@@ -218,10 +219,21 @@ Zones gate **sensitive classes only** — ordinary work is never touched by a
 trust score (ADR-022). Trust survives a proxy restart (ADR-023). Quarantine is
 cleared only by a human.
 
-**Not built yet:**
+**Also built (M5):** a single installable distribution with one CLI, a versioned migration
+runner, health/readiness/metrics endpoints, Postgres behind an extra, container
+files, load test, failure drills, release gate.
 
-- M5: one-command install, Postgres, a real migration runner, load testing,
-  failure drills, docs
+**Honest gaps, all logged:**
+
+| Gap | ADR |
+|---|---|
+| No real agent traffic has ever been observed — **the big one** | ADR-010 |
+| No authentication on the API (local-first by design) | ADR-009 |
+| Postgres written but never run against a real server | ADR-028 |
+| The wheel has never been built here — `release-check.sh` verifies it | ADR-027 |
+| **The name `weaver` is taken on PyPI** — nothing can be published under it | ADR-030 |
+| LangGraph adapter is advisory, cannot block | ADR-025 |
+| 3 open red-team gaps: DNS exfil, destructive shell, config tamper | `redteam/README.md` |
 
 **The honest caveat.** The scenario numbers are against a suite we wrote
 ourselves, and a suite we wrote cannot surprise us. The red-team suite
@@ -247,3 +259,4 @@ costs nothing.
 | What's the plan? | `docs/BUILD_PLAN.md` |
 | How do I run it on my own agents? | `docs/DOGFOOD.md` |
 | How do I attack it? | `redteam/README.md` |
+| How do I run it for real? | `docs/OPERATIONS.md` |

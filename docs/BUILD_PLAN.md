@@ -187,7 +187,8 @@ customer, so it is the most conservative phase in the plan.
 **Goal:** a real team can install, run and trust it. This phase is unglamorous and
 it is the phase that separates "demo" from "product". Do not compress it.
 
-- [ ] **Packaging: one-command install** (`pip install weaver` / `npx weaver init`)
+- [x] **Packaging: one-command install** — single distribution, one `weaver`
+      CLI. **Name still needed**: `weaver` is taken on PyPI (ADR-030)
       — ADR-009 makes this the single most important item in M5
 - [ ] Zero-config defaults: works with no `.env`, sensible fallbacks everywhere
 - [ ] `weaver --help` that explains the product, not just the flags

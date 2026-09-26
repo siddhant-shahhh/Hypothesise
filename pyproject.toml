@@ -1,33 +1,62 @@
-# Workspace root. Not itself a distributable package — the shippable units are
-# under packages/*. `pip install -e .` installs all of them (see [tool.uv.sources]
-# and scripts/dev-setup.sh).
+# The shippable distribution: one `pip install weaver` gives users everything
+# and one command to learn (ADR-027). The internal split under packages/ stays
+# for ADR-005 and the ownership carve-out (ADR-007) — users just never see it.
 [project]
-name = "weaver-workspace"
+name = "weaver"
 version = "0.1.0"
-description = "Agent Immune System — behavioural security layer for AI agents"
+description = "Behavioural security layer for AI agents — learns what each agent normally does, detects dangerous deviations, and controls their autonomy"
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+keywords = ["ai", "agents", "security", "mcp", "observability", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
 dependencies = [
-    "weaver-core",
-    "weaver-store",
-    "weaver-proxy",
+    "sqlalchemy>=2.0",
     "pyyaml>=6.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
 ]
 
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-packages = []
-
-[tool.uv.sources]
-weaver-core = { workspace = true }
-weaver-store = { workspace = true }
-weaver-proxy = { workspace = true }
-weaver-api = { workspace = true }
-
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "httpx>=0.27", "ruff>=0.6", "mypy>=1.11"]
+postgres = ["psycopg[binary]>=3.1"]
+langgraph = ["langchain-core>=0.3"]
+dev = [
+    "pytest>=8.0", "pytest-asyncio>=0.24", "httpx>=0.27",
+    "ruff>=0.6", "mypy>=1.11",
+]
+
+[project.scripts]
+weaver = "weaver.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# One wheel, assembled from the internal packages. Each stays importable under
+# its own name so nothing in the codebase has to know about this.
+[tool.hatch.build.targets.wheel]
+packages = [
+    "packages/cli/weaver",
+    "packages/core/weaver_core",
+    "packages/store/weaver_store",
+    "packages/proxy/weaver_proxy",
+    "packages/api/weaver_api",
+    "packages/adapters/langgraph/weaver_langgraph",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "packages/", "scenarios/", "redteam/", "scripts/", "tests/", "docs/",
+    "README.md", "CLAUDE.md", "pyproject.toml", "weaver.config.example.json",
+]
 
 [tool.uv.workspace]
 members = ["packages/*"]
@@ -35,7 +64,9 @@ members = ["packages/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-pythonpath = ["packages/core", "packages/store", "packages/proxy", "packages/api", "packages/adapters/langgraph"]
+pythonpath = ["packages/cli", "packages/core", "packages/store",
+              "packages/proxy", "packages/api",
+              "packages/adapters/langgraph"]
 norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from weaver_core.engine import Engine
 from weaver_core.events import Event
 from weaver_store.db import get_engine, init_db
@@ -188,7 +188,80 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
 
     @app.get("/healthz")
     def healthz() -> JSONResponse:
+        """Liveness. Deliberately touches nothing — it answers 'is the process
+        up', and a health check that queries the database turns a slow query
+        into an outage."""
         return JSONResponse({"ok": True, "version": "0.1.0"})
+
+    @app.get("/readyz")
+    def readyz() -> JSONResponse:
+        """Readiness: the database answers and the schema is current."""
+        from weaver_store.migrate import status as schema_status
+
+        try:
+            st = schema_status(db)
+            ok = st["up_to_date"]
+            return JSONResponse(
+                {"ok": ok, "schema": st},
+                status_code=200 if ok else 503)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=503)
+
+    @app.get("/metrics")
+    def metrics() -> Response:
+        """Prometheus text format.
+
+        Hand-rolled rather than pulling in a client library — it is a dozen
+        counters, and ADR-009 makes every dependency an install risk.
+        """
+        from weaver_core.detectors.base import detector_errors
+
+        st = repo.stats()
+        agents_by_zone: dict[str, int] = {}
+        quarantined = 0
+        for a in repo.agent_list():
+            agents_by_zone[a.get("zone") or "cold"] = (
+                agents_by_zone.get(a.get("zone") or "cold", 0) + 1)
+            if a.get("quarantined"):
+                quarantined += 1
+
+        lines = [
+            "# HELP weaver_events_total Events ingested.",
+            "# TYPE weaver_events_total counter",
+            f"weaver_events_total {st['events']}",
+            "# HELP weaver_decisions_total Decisions by verdict.",
+            "# TYPE weaver_decisions_total counter",
+        ]
+        for verdict in ("allow", "ask", "block"):
+            lines.append(
+                f'weaver_decisions_total{{verdict="{verdict}"}} '
+                f'{st["verdicts"].get(verdict, 0)}')
+
+        lines += [
+            "# HELP weaver_agents Agents by trust zone.",
+            "# TYPE weaver_agents gauge",
+        ]
+        for zone in ("cold", "warm", "hot"):
+            lines.append(f'weaver_agents{{zone="{zone}"}} {agents_by_zone.get(zone, 0)}')
+
+        lines += [
+            "# HELP weaver_agents_quarantined Quarantined agents.",
+            "# TYPE weaver_agents_quarantined gauge",
+            f"weaver_agents_quarantined {quarantined}",
+            "# HELP weaver_approvals_pending Approvals awaiting a human.",
+            "# TYPE weaver_approvals_pending gauge",
+            f"weaver_approvals_pending {len(repo.pending_approvals(limit=500))}",
+            "# HELP weaver_detector_errors_total Detectors raising exceptions.",
+            "# TYPE weaver_detector_errors_total counter",
+            f"weaver_detector_errors_total {sum(detector_errors().values())}",
+            "# HELP weaver_signals_total Detector firings.",
+            "# TYPE weaver_signals_total counter",
+        ]
+        for d in st["detectors"]:
+            lines.append(
+                f'weaver_signals_total{{detector="{d["detector"]}"}} {d["count"]}')
+
+        return Response("\n".join(lines) + "\n", media_type="text/plain")
 
     # -- dashboard ----------------------------------------------------------
 

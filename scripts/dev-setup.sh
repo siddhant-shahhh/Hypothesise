@@ -68,17 +68,34 @@ echo "==> target: $("$TARGET" -c 'import sys; print(sys.executable)')"
 "$TARGET" -m pip install -q --upgrade pip >/dev/null 2>&1 || true
 
 echo "==> installing weaver packages (editable)"
-if ! "$TARGET" -m pip install -q \
-      -e packages/core -e packages/store -e packages/proxy -e packages/api; then
+# Every member must have a pyproject.toml, or pip fails with a message that
+# looks nothing like the real cause. Check first and say so plainly.
+MISSING=""
+for m in packages/core packages/store packages/proxy packages/api packages/cli \
+         packages/adapters/langgraph; do
+  [ -f "$m/pyproject.toml" ] || MISSING="$MISSING $m"
+done
+if [ -n "$MISSING" ]; then
+  echo "error: these packages have no pyproject.toml and cannot be installed:"
+  for m in $MISSING; do echo "    $m"; done
+  echo
+  echo "That is a repo bug, not an environment problem. pytest passes anyway"
+  echo "because it resolves imports via pythonpath — see tests/test_packaging.py."
+  exit 1
+fi
+
+if ! "$TARGET" -m pip install -e packages/core -e packages/store -e packages/proxy \
+      -e packages/api -e packages/cli -e packages/adapters/langgraph; then
   cat <<'MSG'
 
-error: pip refused to install.
+error: pip refused to install. The output above is pip's own message — read it
+before assuming a cause.
 
-If the message mentions "externally-managed-environment" (PEP 668), you are
-installing into a system Python. Re-run without --here so the script creates a
-virtualenv:
-
-    bash scripts/dev-setup.sh
+Two common ones:
+  * "externally-managed-environment" (PEP 668) — you are installing into a
+    system Python. Re-run without --here so a virtualenv is created.
+  * "does not appear to be a Python project" — a package is missing its
+    pyproject.toml. That is a repo bug; run pytest tests/test_packaging.py.
 
 MSG
   exit 1
@@ -93,7 +110,8 @@ echo "==> installing dev tools"
 # broken install.
 echo "==> verifying"
 if ! (cd /tmp && "$TARGET" -c "
-import weaver_core, weaver_store, weaver_proxy, weaver_api
+import weaver, weaver_core, weaver_store, weaver_proxy, weaver_api
+print('    weaver      ', weaver.__version__)
 print('    weaver_core ', weaver_core.__version__)
 print('    weaver_store  ok')
 print('    weaver_proxy', weaver_proxy.__version__)
