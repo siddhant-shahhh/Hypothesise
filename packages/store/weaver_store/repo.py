@@ -279,10 +279,34 @@ class Repo:
                 select(nodes).where(nodes.c.kind == "resource")
                 .order_by(nodes.c.risk.desc()).limit(10)
             ).fetchall()
+            # Decision latency is what the AGENT feels. Past the gate's budget
+            # it fails open and detection stops silently, so this is the number
+            # that says whether the tool is still doing anything under load.
+            lat = conn.execute(
+                select(func.avg(decisions.c.budget_ms),
+                       func.max(decisions.c.budget_ms),
+                       func.count())
+                .where(decisions.c.budget_ms > 0)
+            ).first()
+            slow = conn.execute(
+                select(func.count()).select_from(decisions)
+                .where(decisions.c.budget_ms >= 40)
+            ).scalar() or 0
+            failed_open = conn.execute(
+                select(func.count()).select_from(decisions)
+                .where(decisions.c.fail_open == 1)
+            ).scalar() or 0
         return {
             "events": total, "agents": n_agents, "sessions": n_sessions,
             "verdicts": by_verdict,
             "detectors": [{"detector": d, "count": n} for d, n in top],
+            "latency_ms": {
+                "mean": round(float(lat[0] or 0.0), 2),
+                "max": int(lat[1] or 0),
+                "measured": int(lat[2] or 0),
+                "near_budget": slow,        # >= 40ms of a 50ms budget
+                "failed_open": failed_open,  # decisions made without evaluating
+            },
             "riskiest": [
                 {
                     "id": r.id,

@@ -113,3 +113,54 @@ def test_no_document_tells_anyone_to_pip_install_a_taken_name():
             warned = any(w in lowered for w in
                          ("do not", "don't", "unrelated", "stranger", "taken"))
             assert warned, f"{doc}:{i} instructs `pip install weaver`: {line.strip()}"
+
+
+def test_standalone_doctor_diagnoses_a_shadowing_package(tmp_path):
+    """A third-party package with the same name shadows ours, and the traceback
+    comes from ITS imports — telling the reader nothing about this project.
+
+    `weaver` is taken on PyPI (ADR-030); `pip uninstall weaver` removes the
+    metadata but can leave site-packages/weaver/ behind, where a real directory
+    beats an editable install's path entry.
+
+    Note this runs `scripts/doctor.py`, not `weaver doctor`: the CLI's doctor
+    lives *inside* the weaver package, so when weaver is shadowed the CLI cannot
+    load at all. The standalone script is the entry point that survives.
+    """
+    import os
+    import subprocess
+    import sys
+
+    fake_site = tmp_path / "site-packages"
+    (fake_site / "weaver").mkdir(parents=True)
+    # What the PyPI package actually contains: a Fabric 1.x import that no
+    # longer resolves on any current Fabric.
+    (fake_site / "weaver" / "__init__.py").write_text("from fabric.api import *\n")
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(fake_site)
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "doctor.py")],
+                       capture_output=True, text=True, timeout=60, cwd=ROOT, env=env)
+
+    out = r.stdout + r.stderr
+    assert r.returncode != 0, "doctor must exit non-zero when something is wrong"
+    assert "weaver" in out
+    assert "MISSING" in out or "BROKEN" in out or "shadow" in out.lower(), out
+    assert "FIX" in out or "rm -rf" in out or "dev-setup" in out, (
+        f"doctor must print an actionable fix, got:\n{out}")
+
+
+def test_standalone_doctor_exists_and_imports_nothing_at_module_level():
+    """It has to run when the package it diagnoses is broken, so it must not
+    import weaver to start up."""
+    src = (ROOT / "scripts" / "doctor.py").read_text()
+    head = src.split("def ")[0]
+    assert "import weaver" not in head, (
+        "scripts/doctor.py imports weaver at module level — it will die on the "
+        "exact failure it exists to diagnose")
+
+
+def test_dev_setup_checks_for_shadowing_before_installing():
+    setup = (ROOT / "scripts" / "dev-setup.sh").read_text()
+    assert "shadowing" in setup
+    assert "site-packages" in setup

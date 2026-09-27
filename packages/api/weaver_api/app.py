@@ -244,7 +244,20 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
         for zone in ("cold", "warm", "hot"):
             lines.append(f'weaver_agents{{zone="{zone}"}} {agents_by_zone.get(zone, 0)}')
 
+        lat = st.get("latency_ms") or {}
         lines += [
+            "# HELP weaver_decision_latency_ms Mean decision latency the agent sees.",
+            "# TYPE weaver_decision_latency_ms gauge",
+            f"weaver_decision_latency_ms {lat.get('mean', 0)}",
+            "# HELP weaver_decision_latency_max_ms Worst decision latency seen.",
+            "# TYPE weaver_decision_latency_max_ms gauge",
+            f"weaver_decision_latency_max_ms {lat.get('max', 0)}",
+            "# HELP weaver_decisions_near_budget_total Decisions within 10ms of the budget.",
+            "# TYPE weaver_decisions_near_budget_total counter",
+            f"weaver_decisions_near_budget_total {lat.get('near_budget', 0)}",
+            "# HELP weaver_decisions_failed_open_total Decisions allowed without evaluation.",
+            "# TYPE weaver_decisions_failed_open_total counter",
+            f"weaver_decisions_failed_open_total {lat.get('failed_open', 0)}",
             "# HELP weaver_agents_quarantined Quarantined agents.",
             "# TYPE weaver_agents_quarantined gauge",
             f"weaver_agents_quarantined {quarantined}",

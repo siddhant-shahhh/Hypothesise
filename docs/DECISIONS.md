@@ -715,3 +715,132 @@ because that package does not provide one.
 
 *Not yet decided,* so the codename stays `weaver` throughout the code until a
 replacement is chosen. One find-replace changes it.
+
+---
+
+### ADR-031 — Uninstalling the colliding package leaves a directory that shadows ours
+**Date:** 2026-09-26 · **Status:** accepted · follows ADR-030
+
+`pip uninstall weaver` removes the third-party package's metadata but can leave
+`site-packages/weaver/` on disk. A real directory in `site-packages` takes
+precedence over an editable install's path entry, so `import weaver` keeps
+resolving to the stranger's code — and fails on *its* imports:
+
+```
+File ".../site-packages/weaver/__init__.py", line 3
+    from fabric.api import *
+ModuleNotFoundError: No module named 'fabric.api'
+```
+
+Nothing in that traceback mentions this project. The natural reading is "a
+dependency is missing", and `pip install fabric` does not help — `fabric.api`
+was Fabric 1.x and no longer exists in Fabric 3.
+
+*Two guards added:*
+
+1. **`weaver doctor`** now reports where each package resolved from, warns when
+   it is outside the repo, distinguishes *missing* from *installed but broken*,
+   and prints the `rm -rf` that fixes it.
+2. **`dev-setup.sh`** checks for a shadowing `weaver` directory **before**
+   installing and refuses with the fix, rather than installing successfully and
+   failing at verification.
+
+Both pinned by `test_doctor_detects_a_shadowing_package`, which builds the real
+failure — a `site-packages/weaver/__init__.py` containing `from fabric.api
+import *`.
+
+*The broader point.* ADR-030 said the name collision blocks publishing. This is
+a second, sharper cost: the collision damages a developer's environment in a way
+that is actively misleading to debug. The rename is not cosmetic and should not
+wait for a release.
+
+---
+
+### ADR-032 — Client configs name an interpreter, never a console script
+**Date:** 2026-09-27 · **Status:** accepted · follows ADR-014, ADR-031
+
+`docs/TEST-URIS.md` and the generated `uris/.vscode/mcp.json` pointed Copilot at
+`/Volumes/Seagate/AI_Layer/.venv/bin/weaver`. Both were wrong, for two reasons
+at once:
+
+1. **That venv belongs to another machine.** `AI_Layer` lives on an external
+   drive shared with a Linux VM, and `.venv` was created there — `pyvenv.cfg`
+   says `home = /usr/bin`, `version = 3.10.12`, and `bin/python3` symlinks to
+   `/usr/bin/python3`. Its binaries cannot execute on macOS.
+2. **There is no `weaver` in it anyway.** On the Mac, `dev-setup.sh` found a
+   virtualenv already active and installed into that one instead — correctly,
+   and it said so — so the console script was written to a completely different
+   prefix.
+
+An MCP client launches its server with none of the shell's environment: no
+PATH, no activated venv. So the config has to carry an absolute path, and an
+absolute path to a per-environment console script is the most fragile thing it
+could carry. When it is wrong the client reports *"server exited"* and nothing
+else — no traceback, no mention of a path.
+
+*Decision.* Client configs name the **interpreter** and use `-m`:
+
+```json
+"command": "/abs/path/to/env/bin/python3",
+"args": ["-m", "weaver", "proxy", "--config", "...", "--detect", "--api", "..."]
+```
+
+One path instead of two, and no console-script shim that may never have been
+written. Docs stop printing a `.venv/...` path for the reader to copy; they
+print the command that produces the reader's own.
+
+*The guard:* `scripts/ops/check-client-config.py`. Given a client config it
+resolves each weaver entry's command, checks it exists and is executable,
+compares the binary format against the host (an ELF file on macOS is now a named
+failure, not a mystery), follows a `#!` line to its interpreter, warns when the
+config's prefix differs from the one running the check, then **runs
+`weaver version` through it** — inference above, ground truth here. It also
+parses the `--config` file and opens a socket to `--api`, because a config that
+launches but ships nowhere leaves an empty dashboard. `--fix` rewrites every
+weaver entry to `sys.executable -m weaver`, which is correct by construction:
+the interpreter running the checker is the one that can import weaver. It
+imports nothing from weaver, like `scripts/doctor.py` and for the same reason.
+
+*Why this belongs in the record.* This is the fourth interpreter-identity bug in
+this project (ADR-014 PEP 668, ADR-030 name collision, ADR-031 shadowing, now
+this) and the second one the test suite could never have caught — `pytest` uses
+`pythonpath` and never launches the installed console script, exactly as the CLI
+package's absence went unnoticed in ADR-026's neighbourhood. The pattern is
+consistent enough to state plainly: **anything that only breaks across a process
+boundary the tests do not cross needs an executable check, not a test.** Three
+now exist — `weaver doctor`, `scripts/doctor.py`, and this.
+
+---
+
+### ADR-033 — The product is named Guardent; the code rename is a separate step
+**Date:** 2026-09-27 · **Status:** accepted · resolves the open question in ADR-030
+
+ADR-030 recorded that `weaver` is taken on PyPI by an unrelated package, which
+blocks publication, and ADR-031 recorded that the collision actively damages a
+developer's environment. The name was the last thing standing between this and
+a release, and it was left unresolved.
+
+*Decision.* The product is **Guardent**. `guardent` is free on PyPI and on npm,
+checked 2026-09-27.
+
+*What this decision does NOT do.* The code is untouched. `weaver`,
+`weaver_core`, `weaver_store`, `weaver_proxy`, `weaver_api`, `~/.weaver/` and
+the `"weaver"` key in the config file all stay as they are for now.
+
+The rename is mechanical — one find-replace across the packages — but it is not
+free. It invalidates every MCP client config that names `-m weaver`, every
+virtualenv holding an editable install, and every `~/.weaver/weaver.db` path.
+Doing it in the middle of the first real dogfood run against `uris` would have
+thrown away the only real traffic this project has ever seen (ADR-010), to fix
+something that blocks nothing until publication.
+
+*So the rename is sequenced after the dogfood run,* and `docs/GUARDENT.md`
+states the split plainly so a new reader is not confused by it: Guardent is the
+product, `weaver` is the command.
+
+*When it happens, it must cover:* the five package directories and their
+distribution names; the console script; `WEAVER_HOME` and `~/.weaver`; the
+`weaver` key in `weaver.config.json`; the stderr banner lines the docs tell
+readers to look for; and a migration or documented manual step for the existing
+database path. `scripts/ops/check-client-config.py --fix` already rewrites
+client configs, so that part is covered.

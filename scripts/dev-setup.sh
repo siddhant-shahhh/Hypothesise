@@ -67,6 +67,28 @@ echo "==> target: $("$TARGET" -c 'import sys; print(sys.executable)')"
 # ---- install ---------------------------------------------------------------
 "$TARGET" -m pip install -q --upgrade pip >/dev/null 2>&1 || true
 
+echo "==> checking for a shadowing package"
+# `weaver` is a real package on PyPI (ADR-030). `pip uninstall weaver` removes
+# its metadata but can leave site-packages/weaver/ behind, and a real directory
+# there beats an editable install's path entry — so `import weaver` silently
+# resolves to the stranger's code and fails on ITS imports.
+SITE="$("$TARGET" -c 'import site; print(site.getsitepackages()[0])' 2>/dev/null || echo "")"
+if [ -n "$SITE" ] && [ -d "$SITE/weaver" ] && [ ! -e "$SITE/weaver/__main__.py" ]; then
+  cat <<MSG
+error: a different package named 'weaver' is installed and will shadow this one.
+
+    $SITE/weaver
+
+That is almost certainly the unrelated 'weaver' package from PyPI. Remove it:
+
+    rm -rf "$SITE/weaver" "$SITE"/weaver-*.dist-info
+    bash scripts/dev-setup.sh
+
+MSG
+  exit 1
+fi
+echo "    none found"
+
 echo "==> installing weaver packages (editable)"
 # Every member must have a pyproject.toml, or pip fails with a message that
 # looks nothing like the real cause. Check first and say so plainly.
@@ -118,6 +140,8 @@ print('    weaver_proxy', weaver_proxy.__version__)
 print('    weaver_api    ok')
 "); then
   echo "!! verification failed. Run: $TARGET scripts/doctor.py"
+  echo "   (use the standalone script, not \`weaver doctor\` — if the weaver"
+  echo "    package itself is broken, the CLI cannot load to diagnose it)"
   exit 1
 fi
 

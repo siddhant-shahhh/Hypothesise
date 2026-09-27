@@ -47,8 +47,9 @@ Same shape for all three — one server replacing the list.
 
 ```json
 {"mcpServers": {"weaver": {
-  "command": "/Volumes/Seagate/AI_Layer/.venv/bin/weaver-proxy",
-  "args": ["--config", "/Volumes/Seagate/AI_Layer/weaver.config.json", "--detect"]
+  "command": "/absolute/path/to/your/env/bin/python3",
+  "args": ["-m", "weaver", "proxy",
+           "--config", "/Volumes/Seagate/AI_Layer/weaver.config.json", "--detect"]
 }}}
 ```
 
@@ -57,8 +58,18 @@ Same shape for all three — one server replacing the list.
 **VS Code / Copilot** — `.vscode/mcp.json`, under `servers` rather than
 `mcpServers`; the value is identical.
 
-Use the **absolute path** to `.venv/bin/weaver-proxy`. The client does not
-inherit your shell's activated venv.
+Use an **absolute path**, because the client does not inherit your shell's
+activated venv — and point it at the **interpreter** (`python3 -m weaver`)
+rather than a console script in `bin/`. One path to get wrong instead of two,
+and no shim to be missing. ADR-032.
+
+Then check it before you rely on it, from the environment Weaver is installed
+in:
+
+```bash
+python3 scripts/ops/check-client-config.py <that config> --fix
+python3 scripts/ops/check-client-config.py <that config>
+```
 
 ## 4. Work normally
 

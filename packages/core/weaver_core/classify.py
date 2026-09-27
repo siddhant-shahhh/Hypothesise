@@ -52,7 +52,19 @@ _URI_RULES: list[tuple[ResourceClass, re.Pattern[str]]] = [
         ResourceClass.CONFIG,
         re.compile(
             r"(\.ya?ml$|\.toml$|\.ini$|\.cfg$|\.conf$|\.properties$"
-            r"|(^|/)config(/|\.)|dockerfile|docker-compose|\.tf$|\.tfvars$)",
+            r"|(^|/)config(/|\.)|dockerfile|docker-compose|\.tf$|\.tfvars$"
+            # Config directories: everything inside one is configuration.
+            r"|/\.(vscode|idea|config|github)/"
+            # Rc files, with or without an extension.
+            r"|(^|/)\.(babelrc|eslintrc|prettierrc|stylelintrc|npmrc|nvmrc"
+            r"|editorconfig|dockerignore|gitattributes|gitignore)\b"
+            # Named JSON config files. NOT a blanket `\.json$` — most JSON in a
+            # repo is data or fixtures, and misclassifying those is worse than
+            # leaving them UNKNOWN.
+            r"|(^|/)(package|package-lock|tsconfig|jsconfig|composer|mcp"
+            r"|settings|launch|tasks|extensions|manifest|angular|nest-cli"
+            r"|firebase|vercel|netlify|renovate|lerna|nx|turbo|deno|jest"
+            r"|nodemon|babel|serverless|pyrightconfig|biome|cdk)\.json$)",
             re.I,
         ),
     ),

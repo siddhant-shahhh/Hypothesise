@@ -1,5 +1,7 @@
 """Control plane tests — ingest, queries, persistence, the dashboard."""
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from weaver_api.app import create_app
@@ -189,3 +191,68 @@ def test_healthz_touches_nothing():
     c = TestClient(app)
     app.state.repo.engine.dispose()
     assert c.get("/healthz").json()["ok"] is True
+
+
+def test_stats_reports_decision_latency(client):
+    """Latency is what the agent feels. Past the gate's budget it fails open and
+    detection stops silently, so this has to be visible."""
+    c, app = client
+    from weaver_api.demo import load_demo
+
+    load_demo(app.state.repo, app.state.engine)
+    lat = c.get("/v1/stats").json()["latency_ms"]
+    for key in ("mean", "max", "measured", "near_budget", "failed_open"):
+        assert key in lat
+    assert lat["failed_open"] == 0, "demo traffic should never fail open"
+
+
+def test_metrics_exposes_latency_and_fail_open(client):
+    c, app = client
+    from weaver_api.demo import load_demo
+
+    load_demo(app.state.repo, app.state.engine)
+    body = c.get("/metrics").text
+    for metric in ("weaver_decision_latency_ms",
+                   "weaver_decisions_near_budget_total",
+                   "weaver_decisions_failed_open_total"):
+        assert metric in body
+
+
+# --- dashboard liveness ----------------------------------------------------
+# The dashboard shipped with only the approvals badge on a timer, so a session
+# timeline left open while an agent worked never updated. Events were recorded
+# correctly and the screen showed nothing — indistinguishable, to the person
+# watching, from Weaver not working at all.
+
+STATIC = (
+    Path(__file__).resolve().parents[1]
+    / "packages" / "api" / "weaver_api" / "static" / "index.html"
+)
+
+
+def test_dashboard_refreshes_the_current_view_on_a_timer():
+    html = STATIC.read_text()
+    assert "liveRefresh" in html
+    assert "setInterval(liveRefresh" in html
+
+
+def test_live_refresh_does_not_go_through_render():
+    """render() nulls `session`, which would eject a reader from a timeline
+    every five seconds. The refresh must re-run the view loader in place."""
+    html = STATIC.read_text()
+    body = html.split("async function liveRefresh(){", 1)[1].split("}", 1)[0]
+    assert "render()" not in body
+    assert "views[view]()" in body
+
+
+def test_live_refresh_skips_the_views_it_would_break():
+    html = STATIC.read_text()
+    body = html.split("async function liveRefresh(){", 1)[1].split("setInterval", 1)[0]
+    assert "'approvals'" in body
+    assert "'graph'" in body
+
+
+def test_live_refresh_stops_when_the_tab_is_hidden():
+    """Otherwise every forgotten tab polls a local server forever."""
+    html = STATIC.read_text()
+    assert "visibilitychange" in html

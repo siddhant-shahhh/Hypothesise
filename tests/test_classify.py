@@ -84,3 +84,48 @@ def test_tool_hints_when_no_uri():
     assert classify_resource("", "shell-mcp", "exec") is ResourceClass.SHELL
     assert classify_resource("", "postgres-mcp", "query") is ResourceClass.DATABASE
     assert classify_resource("", "unknown-mcp", "mystery") is ResourceClass.UNKNOWN
+
+
+# --- JSON config files -----------------------------------------------------
+# Found on the first real Copilot run against `uris`: reading
+# `.vscode/mcp.json` classified UNKNOWN, because the CONFIG rule had no JSON
+# at all. Every JSON config in a modern project was landing on the UNKNOWN
+# floor (0.05) instead of the CONFIG floor (0.10).
+
+
+@pytest.mark.parametrize("uri", [
+    "/Volumes/Seagate/uris/.vscode/mcp.json",
+    "file:///app/.vscode/settings.json",
+    "file:///app/package.json",
+    "file:///app/package-lock.json",
+    "file:///app/tsconfig.json",
+    "file:///app/firebase.json",
+    "file:///app/.github/workflows/ci.yml",
+    "file:///app/.eslintrc",
+    "file:///app/.eslintrc.json",
+    "file:///app/.gitignore",
+])
+def test_json_and_rc_config_files_are_config(uri):
+    assert classify_resource(uri) is ResourceClass.CONFIG
+
+
+@pytest.mark.parametrize("uri", [
+    "file:///app/data/users.json",
+    "file:///app/fixtures/response.json",
+    "file:///app/exports/2026-09-27.json",
+])
+def test_plain_json_data_is_not_promoted_to_config(uri):
+    """A blanket `.json` rule would call every dataset a config file. The
+    module's own rule is that a wrong class is worse than UNKNOWN."""
+    assert classify_resource(uri) is ResourceClass.UNKNOWN
+
+
+@pytest.mark.parametrize("uri", [
+    "file:///app/secrets.json",
+    "file:///app/credentials.json",
+    "file:///app/.vscode/api_key.json",
+])
+def test_secret_json_still_beats_the_new_config_rule(uri):
+    """Order matters: SECRET is checked first, and the new config-directory
+    rule must not capture a credential file that happens to live in one."""
+    assert classify_resource(uri) is ResourceClass.SECRET

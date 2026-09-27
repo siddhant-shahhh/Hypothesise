@@ -289,6 +289,27 @@ function tickTTL(){
 setInterval(() => { if(view==='approvals'){ tickTTL(); } }, 1000);
 setInterval(refreshCount, 5000);
 
+// ---------- live view ----------
+// This page is meant to be left open while an agent works. Until now only the
+// approvals badge was on a timer, so the view itself — a session timeline
+// above all — showed whatever was true when you opened it. Events arrived and
+// the screen said nothing had happened, which is the one failure mode a
+// security dashboard cannot have.
+//
+// Deliberately NOT render(): that resets `session` to null and would throw you
+// out of a timeline you are reading every five seconds. This re-runs the
+// current view's loader in place, keeping the drill-down.
+let liveStop = false;
+document.addEventListener('visibilitychange', () => { liveStop = document.hidden; });
+
+async function liveRefresh(){
+  // approvals: live buttons mid-click. graph: re-laying it out every 5s is
+  // unreadable. Both refresh when you switch to them.
+  if(liveStop || view === 'approvals' || view === 'graph') return;
+  try { await views[view](); } catch(e){}
+}
+setInterval(liveRefresh, 5000);
+
 async function refreshCount(){
   try {
     const a = await api('/v1/approvals');

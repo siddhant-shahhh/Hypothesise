@@ -253,6 +253,7 @@ costs nothing.
 
 | Question | File |
 |---|---|
+| Everything in one place, for a new teammate | `docs/GUARDENT.md` |
 | How do I run it? | `docs/COMMANDS.md` |
 | How does it work in detail? | `docs/ARCHITECTURE.md` |
 | Why is it built this way? | `docs/DECISIONS.md` |
@@ -260,3 +261,5 @@ costs nothing.
 | How do I run it on my own agents? | `docs/DOGFOOD.md` |
 | How do I attack it? | `redteam/README.md` |
 | How do I run it for real? | `docs/OPERATIONS.md` |
+| How do I test it on my own agents? | `docs/TESTING.md` |
+| Guarding another repo (two-repo setup) | `docs/TEST-URIS.md` |

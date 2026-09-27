@@ -53,11 +53,13 @@ weaver doctor                                        # diagnose the environment
 pytest
 ```
 
-Or skip activation and use the full path:
+Or skip activation and name the interpreter. Use *your* environment's path —
+`weaver doctor` prints it, and it is not necessarily `./.venv` (on a shared
+drive that directory may have been created by another machine, ADR-032):
 
 ```bash
-.venv/bin/python -m pytest
-.venv/bin/weaver-api --demo
+/path/to/your/env/bin/python -m pytest
+/path/to/your/env/bin/python -m weaver api --demo
 ```
 
 ### Options
@@ -743,7 +745,8 @@ Env vars override the file — see the table in section 4f.
 
 ## 6. Dogfood it — real agent traffic today
 
-> Full walkthrough with client-by-client config: **`docs/DOGFOOD.md`**
+> Client-by-client config: **`docs/DOGFOOD.md`**
+> Full test plan with pass/fail criteria: **`docs/TESTING.md`**
 
 There is no production traffic to learn from (ADR-010), and this is the
 cheapest fix: put Weaver in front of your own Claude Code or Cursor session.
@@ -755,14 +758,34 @@ cheapest fix: put Weaver in front of your own Claude Code or Cursor session.
 {
   "mcpServers": {
     "weaver": {
-      "command": "python3",
-      "args": ["-m", "weaver_proxy", "--config", "/Volumes/Seagate/AI_Layer/weaver.config.json"]
+      "command": "/absolute/path/to/your/env/bin/python3",
+      "args": ["-m", "weaver", "proxy",
+               "--config", "/Volumes/Seagate/AI_Layer/weaver.config.json",
+               "--detect", "--api", "http://127.0.0.1:8080"]
     }
   }
 }
 ```
 
-3. Work normally. Every tool call flows through Weaver in observe mode.
+An **absolute** interpreter path, not bare `python3` and not `bin/weaver`: MCP
+clients launch the command with none of your shell's environment, so nothing is
+on PATH and no venv is active. ADR-032.
+
+3. Check the config before relying on it — a wrong `command` shows up in the
+   client only as *"server exited"*:
+
+```bash
+python3 scripts/ops/check-client-config.py <that config> --fix   # write it correctly
+python3 scripts/ops/check-client-config.py <that config>         # verify it
+```
+
+Run that with the interpreter that has Weaver installed. `--fix` rewrites every
+weaver entry to use the interpreter running it, so it cannot name the wrong one.
+The plain run resolves the command, confirms it is executable and built for this
+platform, runs `weaver version` through it, parses the `--config` file, and
+connects to `--api`.
+
+4. Work normally. Every tool call flows through Weaver in observe mode.
 
 Real traffic, available now, costs nothing. Start this before M2 — the
 detectors get tuned against whatever traffic exists.
@@ -800,6 +823,8 @@ git status --short
 | `enforce mode needs a control plane` | enforce with no `apiUrl` | start `weaver-api`, pass `--api` |
 | an agent hangs ~2 min then fails | an `ask` rule with nobody approving | answer in the Approvals tab, or make the rule narrower |
 | approvals show `unknown` agent | control plane unreachable when the request opened | check `weaver-api` is up |
+| MCP client says `server exited` / no weaver tools | `command` in the client config is wrong for this machine | `python3 scripts/ops/check-client-config.py <config>` |
+| `bin/weaver` in the config does not exist | that venv was built elsewhere — on a shared drive, likely by another OS | `check-client-config.py <config> --fix` (ADR-032) |
 
 ---
 
@@ -812,6 +837,8 @@ pytest                                          # 175 tests
 ruff check packages scripts tests               # lint
 mypy packages/core/weaver_core                  # types
 python3 scripts/replay.py --all --quiet         # eval suite (exit 0 = criteria met)
+python3 scripts/ops/check-client-config.py PATH  # validate an MCP client config
+python3 scripts/ops/check-client-config.py PATH --fix   # and repair it
 python3 -m weaver_proxy --config weaver.config.example.json --detect --api http://127.0.0.1:8080
 python3 -m weaver_api --demo                    # dashboard on :8080
 python3 scripts/doctor.py                       # diagnose import problems

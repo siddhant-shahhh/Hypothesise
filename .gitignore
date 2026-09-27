@@ -26,3 +26,9 @@ build/
 ._*
 .Spotlight-V100
 .Trashes
+
+# Test fixtures (fake secrets) and machine-specific config.
+# Regenerate with scripts/ops/testbed-setup.sh
+testbed/
+weaver.config.json
+.vscode/mcp.json
