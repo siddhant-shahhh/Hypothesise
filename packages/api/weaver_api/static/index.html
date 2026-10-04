@@ -3,112 +3,151 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Weaver</title>
+<title>Guardent</title>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:wght@400;700&family=Poppins:wght@400;500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
 <style>
+/* ===== Crimson Velvet =====
+   Libre Caslon = display + big numbers · Poppins = UI · Roboto = tables/data
+   8px spacing base · radius 4/8/12/16 · trust colour is semantic, kept small.
+   WEAVER is the internal codename; GUARDENT is the product (ADR-033). */
 :root{
-  --bg:#0e1116; --panel:#161b22; --panel2:#1c232c; --line:#2a323d;
-  --fg:#e6edf3; --dim:#8b949e; --faint:#6e7681;
-  --allow:#3fb950; --ask:#d29922; --block:#f85149;
-  --accent:#58a6ff; --mag:#bc8cff;
+  --bg:#f2eee9; --bg2:#ebe5df; --card:#faf7f4; --line:#e2dbd4;
+  --tx:#1e2023; --tx2:#6d6e73; --faint:#8d8e93;
+  --c1:#2c0f12; --c2:#6b1e23; --hov:#8a3037; --acc:#a9444c; --mut:#c76a70; --tint:#f0d9da;
+  --safe:#3f7a5c; --warn:#b98118; --info:#3f6a8a;
+  --sh:0 12px 32px rgba(44,15,18,.08);
+  --cell0:#efe3e0; --cell4:#6b1e23;
+  --fdisp:'Libre Caslon Text',Georgia,serif; --fui:'Poppins',system-ui,sans-serif; --fdata:'Roboto',ui-monospace,monospace;
 }
-:root[data-theme="light"]{
-  --bg:#ffffff; --panel:#f6f8fa; --panel2:#eef1f4; --line:#d8dee4;
-  --fg:#1f2328; --dim:#59636e; --faint:#818b98;
-  --allow:#1a7f37; --ask:#9a6700; --block:#cf222e;
-  --accent:#0969da; --mag:#8250df;
+:root[data-theme="dark"]{
+  --bg:#131315; --bg2:#1e1f22; --card:#1e2023; --line:#2f3033;
+  --tx:#f2eee9; --tx2:#b7b7bd; --faint:#85868c; --tint:#2c0f12;
+  --safe:#6fb28f; --warn:#e0b04a; --info:#7fa8c4;
+  --sh:0 16px 40px rgba(0,0,0,.45); --cell0:#2a2b2e;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);
-  font:14px/1.5 ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}
-header{display:flex;align-items:center;gap:16px;padding:12px 20px;
-  border-bottom:1px solid var(--line);background:var(--panel);
-  position:sticky;top:0;z-index:10;flex-wrap:wrap}
-.logo{font-weight:700;letter-spacing:.5px}
-.logo small{color:var(--dim);font-weight:400;margin-left:8px}
-nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
-nav button{background:none;border:1px solid transparent;color:var(--dim);
-  padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit}
-nav button:hover{color:var(--fg);background:var(--panel2)}
-nav button.on{color:var(--fg);background:var(--panel2);border-color:var(--line)}
+body{margin:0;background:var(--bg);color:var(--tx);font:400 13px/1.5 var(--fui);
+  background-image:radial-gradient(900px 500px at 100% 0,rgba(138,48,55,.16),transparent 60%)}
+header{display:flex;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid var(--line);
+  background:var(--card);position:sticky;top:0;z-index:10;flex-wrap:wrap}
+.logo{font:700 15px var(--fdisp);display:flex;align-items:center;gap:10px}
+.logo i{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--acc),var(--c2));
+  display:grid;place-items:center;color:#fff;font-style:normal;font-size:13px}
+.logo small{color:var(--tx2);font:400 11px var(--fui);margin-left:4px}
+nav{display:flex;gap:3px;margin-left:auto;flex-wrap:wrap}
+nav button{background:none;border:1px solid transparent;color:var(--tx2);padding:6px 11px;
+  border-radius:8px;cursor:pointer;font:500 12px var(--fui)}
+nav button:hover{color:var(--tx);background:var(--bg2)}
+nav button.on{background:var(--tint);color:var(--acc)}
+:root[data-theme="dark"] nav button.on{background:#3a1a1e;color:var(--tx)}
+nav button:focus-visible,.btn:focus-visible{outline:2px solid var(--mut);outline-offset:2px}
 main{padding:20px;max-width:1400px;margin:0 auto}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-  gap:12px;margin-bottom:20px}
-.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
-.kpi .n{font-size:26px;font-weight:600;line-height:1.1}
-.kpi .l{color:var(--dim);font-size:11px;text-transform:uppercase;
-  letter-spacing:.6px;margin-top:4px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  padding:16px;margin-bottom:16px}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);
-  margin:0 0 12px}
-table{width:100%;border-collapse:collapse}
-th{text-align:left;color:var(--faint);font-weight:500;font-size:11px;
-  text-transform:uppercase;letter-spacing:.5px;padding:6px 10px;
-  border-bottom:1px solid var(--line)}
-td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+h1{font:400 26px/1.2 var(--fdisp);margin:0 0 2px}
+.lede{color:var(--tx2);font-size:12px;margin:0 0 16px}
+h2{font:500 12px var(--fui);letter-spacing:.3px;color:var(--tx);margin:0 0 12px;
+  display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+h2 .dim{font-weight:400}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;box-shadow:var(--sh)}
+.kpi .n{font:400 28px/1.1 var(--fdisp)}
+.kpi .l{color:var(--tx2);font-size:11px;margin-top:4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;
+  margin-bottom:16px;box-shadow:var(--sh);min-width:0}
+.g2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;align-items:start}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:start}
+.g2>.card,.g3>.card{margin-bottom:0}
+table{width:100%;border-collapse:collapse;font-family:var(--fdata);font-size:12px}
+th{text-align:left;color:var(--tx2);font-weight:400;font-size:11px;padding:6px 10px;
+  border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:none}
 tr.click{cursor:pointer}
-tr.click:hover{background:var(--panel2)}
-.v{font-weight:600;font-size:11px;letter-spacing:.5px}
-.v.allow{color:var(--allow)} .v.ask{color:var(--ask)} .v.block{color:var(--block)}
-.pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;
-  border:1px solid var(--line);color:var(--dim)}
-.pill.secret{color:var(--block);border-color:var(--block)}
-.pill.shell,.pill.network_egress{color:var(--ask);border-color:var(--ask)}
-.pill.database{color:var(--accent);border-color:var(--accent)}
-.det{color:var(--mag);font-size:12px;margin-top:4px}
-.det b{font-weight:600}
-.sentence{color:var(--fg);font-size:12px;margin-top:4px;padding:6px 10px;
-  border-left:2px solid var(--line);background:var(--panel2);border-radius:0 4px 4px 0}
-.sentence.block{border-left-color:var(--block)}
-.sentence.ask{border-left-color:var(--ask)}
-.dim{color:var(--dim)} .faint{color:var(--faint)}
-.mono{font-family:inherit;word-break:break-all}
-#cy{height:520px;background:var(--bg);border-radius:6px;border:1px solid var(--line)}
-.empty{color:var(--dim);text-align:center;padding:40px 20px}
-.empty code{background:var(--panel2);padding:2px 6px;border-radius:4px;color:var(--fg)}
-.bar{height:4px;background:var(--panel2);border-radius:2px;overflow:hidden;
-  margin-top:6px;max-width:120px}
-.bar i{display:block;height:100%;background:var(--accent)}
-.back{background:none;border:1px solid var(--line);color:var(--dim);
-  padding:4px 10px;border-radius:6px;cursor:pointer;font:inherit;margin-bottom:12px}
-.back:hover{color:var(--fg)}
-.btn{border:1px solid var(--line);background:var(--panel2);color:var(--fg);
-  padding:5px 14px;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
-.btn:hover{border-color:var(--dim)}
-.btn.ok{color:var(--allow);border-color:var(--allow)}
-.btn.no{color:var(--block);border-color:var(--block)}
-.btn:disabled{opacity:.4;cursor:default}
-.acts{display:flex;gap:8px;margin-top:8px}
-#pcount{background:var(--ask);color:#000;border-radius:99px;padding:0 6px;
-  font-size:10px;font-weight:700;margin-left:2px}
-#pcount:empty{display:none}
-.ttl{color:var(--ask);font-size:11px}
-.zone{display:inline-block;padding:1px 9px;border-radius:99px;font-size:11px;
-  font-weight:600;letter-spacing:.4px}
-.zone.cold{color:var(--allow);border:1px solid var(--allow)}
-.zone.warm{color:var(--ask);border:1px solid var(--ask)}
-.zone.hot{color:var(--block);border:1px solid var(--block)}
-.tmeter{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;
-  margin-top:6px;max-width:160px}
+tr.click:hover{background:var(--bg2)}
+.v{font-weight:600;font-size:11px;letter-spacing:.4px}
+.v.allow{color:var(--safe)} .v.ask{color:var(--warn)} .v.block{color:var(--acc)}
+:root[data-theme="dark"] .v.block{color:var(--mut)}
+.pill{display:inline-block;padding:1px 9px;border-radius:99px;font-size:10.5px;
+  border:1px solid var(--line);color:var(--tx2);white-space:nowrap}
+.pill.secret{color:var(--acc);border-color:currentColor}
+.pill.shell,.pill.network_egress{color:var(--warn);border-color:currentColor}
+.pill.database{color:var(--info);border-color:currentColor}
+.det{color:var(--mut);font-size:11.5px;margin-top:3px;font-family:var(--fdata)}
+.det b{font-weight:500}
+.sentence{color:var(--tx);font-size:11.5px;margin-top:5px;padding:7px 10px;border-left:2px solid var(--line);
+  background:var(--bg2);border-radius:0 6px 6px 0;font-family:var(--fui)}
+.sentence.block{border-left-color:var(--acc)} .sentence.ask{border-left-color:var(--warn)}
+.note{border-left:3px solid var(--warn);padding:10px 14px;background:var(--bg2);
+  border-radius:0 8px 8px 0;font-size:11.5px;color:var(--tx2);margin-top:12px}
+.note b{color:var(--tx);font-weight:500}
+.note.hard{border-left-color:var(--acc)}
+.dim{color:var(--tx2)} .faint{color:var(--faint);font-size:11px}
+.mono{font-family:var(--fdata);word-break:break-all}
+#cy{height:520px;background:var(--bg);border-radius:12px;border:1px solid var(--line)}
+.empty{color:var(--tx2);text-align:center;padding:36px 20px;font-size:12px}
+.empty code{background:var(--bg2);padding:2px 6px;border-radius:4px;color:var(--tx);font-family:var(--fdata)}
+.bar{height:5px;background:var(--cell0);border-radius:3px;overflow:hidden;margin-top:6px;max-width:140px}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--acc)}
+.tmeter{height:6px;background:var(--cell0);border-radius:3px;overflow:hidden;margin-top:6px;max-width:160px}
 .tmeter i{display:block;height:100%}
-.quar{color:var(--block);font-size:11px;font-weight:600;letter-spacing:.4px}
-@media(max-width:600px){main{padding:12px}td,th{padding:6px}}
+.btn{border:1px solid var(--line);background:var(--bg2);color:var(--tx);padding:6px 14px;
+  border-radius:99px;cursor:pointer;font:500 11.5px var(--fui)}
+.btn:hover{border-color:var(--mut)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.pri:hover{background:var(--hov)}
+.btn.ok{color:var(--safe);border-color:var(--safe)}
+.btn.no{color:var(--acc);border-color:var(--acc)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.back{margin-bottom:12px}
+.acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+#pcount{background:var(--warn);color:#17120a;border-radius:99px;padding:0 6px;font:700 10px var(--fdata);margin-left:3px}
+#pcount:empty{display:none}
+.ttl{color:var(--warn);font-size:11px;font-family:var(--fdata)}
+.zone{display:inline-block;padding:2px 10px;border-radius:99px;font:600 10.5px var(--fui);letter-spacing:.3px;border:1px solid currentColor}
+.zone.cold{color:var(--safe)} .zone.warm{color:var(--warn)} .zone.hot{color:var(--acc)}
+:root[data-theme="dark"] .zone.hot{color:var(--mut)}
+.quar{color:var(--acc);font:600 10.5px var(--fui);letter-spacing:.3px;margin-top:3px}
+:root[data-theme="dark"] .quar{color:var(--mut)}
+.srch{background:var(--bg2);border:1px solid var(--line);color:var(--tx);border-radius:99px;
+  padding:8px 16px;font:12px var(--fui);min-width:220px}
+.tb{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.tg{display:inline-block;width:32px;height:18px;border-radius:9px;background:var(--line);position:relative;flex:none}
+.tg:after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.tg.on{background:var(--acc)} .tg.on:after{left:16px}
+.list>div{padding:9px 0;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:center}
+.list>div:first-child{border-top:0}
+.big{font:400 34px var(--fdisp);line-height:1.1}
+.row{display:flex;justify-content:space-between;gap:12px;font-family:var(--fdata);font-size:11.5px;color:var(--tx2);padding:4px 0}
+.row span:last-child{color:var(--tx);text-align:right}
+.ev{display:inline-block;padding:2px 8px;border-radius:5px;font:400 10px var(--fdata);
+  background:var(--bg2);border:1px solid var(--line);color:var(--tx2);margin:2px 3px 0 0}
+.trend{font-family:var(--fdata);font-size:11.5px}
+.trend.rising{color:var(--acc)} .trend.decaying{color:var(--safe)} .trend.stable{color:var(--tx2)}
+:root[data-theme="dark"] .trend.rising{color:var(--mut)}
+.key{display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--tx2);margin-top:10px}
+.key i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.key i.dash{width:18px;height:0;border-top:2px dashed var(--acc);border-radius:0;margin-bottom:3px}
+@media(max-width:900px){.g2,.g3{grid-template-columns:1fr}}
+@media(max-width:600px){main{padding:12px}td,th{padding:6px}h1{font-size:21px}}
 </style>
 </head>
 <body>
 <header>
-  <div class="logo">WEAVER <small>agent immune system</small></div>
+  <div class="logo"><i>◈</i> GUARDENT <small>agent immune system</small></div>
   <nav>
     <button data-v="overview" class="on">Overview</button>
     <button data-v="sessions">Sessions</button>
     <button data-v="agents">Agents</button>
-    <button data-v="approvals">Approvals <span id="pcount"></span></button>
+    <button data-v="graph">Behavioural web</button>
+    <button data-v="trust">Trust zones</button>
+    <button data-v="signals">Threat signals</button>
     <button data-v="alerts">Alerts</button>
+    <button data-v="approvals">Approvals <span id="pcount"></span></button>
     <button data-v="shadow">Shadow</button>
-    <button data-v="graph">Graph</button>
-    <button id="theme">◐</button>
+    <button data-v="policies">Policies</button>
+    <button data-v="audit">Audit log</button>
+    <button data-v="settings">Settings</button>
+    <button id="theme" title="Light / dark">◐</button>
   </nav>
 </header>
 <main id="app"><div class="empty">loading…</div></main>
@@ -116,47 +155,55 @@ tr.click:hover{background:var(--panel2)}
 <script>
 const $ = s => document.querySelector(s);
 const app = $('#app');
-let view = 'overview', session = null;
+let view = 'overview', session = null, picked = null, query = '';
 
 const api = p => fetch(p).then(r => r.ok ? r.json() : Promise.reject(r.status));
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const short = u => { const s = String(u ?? ''); return s.length > 58 ? s.slice(0,55)+'…' : s; };
-
+const when = t => esc(String(t ?? '').replace('T',' ').slice(0,19));
+const num = n => (n ?? 0).toLocaleString();
 function vClass(v){ return `v ${v}`; }
+const zc = z => z === 'hot' ? 'var(--acc)' : z === 'warm' ? 'var(--warn)' : 'var(--safe)';
+const ZONE = {cold:'Safe', warm:'Caution', hot:'Restricted'};
+const head = (t,d) => `<h1>${t}</h1><p class="lede">${d}</p>`;
+const evs = l => (l||[]).map(d => `<span class="ev">${esc(d.detector)}${
+  d.weight!=null?' '+Number(d.weight).toFixed(2):''}</span>`).join('');
 
 // ---------- overview ----------
 async function overview(){
   const [s, a] = await Promise.all([api('/v1/stats'), api('/v1/alerts?limit=8')]);
-  const v = s.verdicts || {};
-  app.innerHTML = `
+  const v = s.verdicts || {}, L = s.latency_ms || {};
+  app.innerHTML = head('Overview','What the fleet has done, and what the engine made of it') + `
   <div class="kpis">
-    <div class="kpi"><div class="n">${s.events}</div><div class="l">events</div></div>
-    <div class="kpi"><div class="n">${s.sessions}</div><div class="l">sessions</div></div>
-    <div class="kpi"><div class="n">${s.agents}</div><div class="l">agents</div></div>
-    <div class="kpi"><div class="n" style="color:var(--ask)">${v.ask||0}</div><div class="l">held</div></div>
-    <div class="kpi"><div class="n" style="color:var(--block)">${v.block||0}</div><div class="l">blocked</div></div>
+    <div class="kpi"><div class="n">${num(s.events)}</div><div class="l">events</div></div>
+    <div class="kpi"><div class="n">${num(s.sessions)}</div><div class="l">sessions</div></div>
+    <div class="kpi"><div class="n">${num(s.agents)}</div><div class="l">agents</div></div>
+    <div class="kpi"><div class="n" style="color:var(--warn)">${num(v.ask||0)}</div><div class="l">held for approval</div></div>
+    <div class="kpi"><div class="n" style="color:var(--acc)">${num(v.block||0)}</div><div class="l">blocked</div></div>
   </div>
-  <div class="card">
-    <h2>Detectors firing</h2>
+  <div class="kpis">
+    <div class="kpi"><div class="n">${(L.mean??0).toFixed(2)}<span class="dim" style="font-size:13px"> ms</span></div><div class="l">mean decision</div></div>
+    <div class="kpi"><div class="n">${(L.max??0)}<span class="dim" style="font-size:13px"> ms</span></div><div class="l">slowest decision</div></div>
+    <div class="kpi"><div class="n" style="color:${(L.near_budget||0)?'var(--warn)':'var(--safe)'}">${num(L.near_budget||0)}</div><div class="l">near the 50ms budget</div></div>
+    <div class="kpi"><div class="n" style="color:${(L.failed_open||0)?'var(--acc)':'var(--safe)'}">${num(L.failed_open||0)}</div><div class="l">failed open</div></div>
+  </div>
+  <div class="g2">
+    <div class="card"><h2>Detectors firing</h2>
     ${s.detectors.length ? `<table><tbody>${s.detectors.map(d=>`
-      <tr><td style="width:60%">${esc(d.detector)}</td>
-      <td class="dim">${d.count}</td></tr>`).join('')}</tbody></table>`
-      : '<div class="empty">nothing has fired yet</div>'}
-  </div>
-  <div class="card">
-    <h2>Riskiest resources</h2>
-    ${s.riskiest.length ? `<table><thead><tr><th>resource</th><th>class</th><th>risk</th></tr></thead>
-      <tbody>${s.riskiest.map(r=>`<tr>
-        <td class="mono">${esc(short(r.label))}</td>
-        <td><span class="pill ${esc(r.class)}">${esc(r.class)}</span></td>
-        <td>${r.risk.toFixed(3)}<div class="bar"><i style="width:${r.risk*100}%"></i></div></td>
+      <tr><td style="width:60%">${esc(d.detector)}</td><td class="dim">${d.count}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">nothing has fired yet</div>'}</div>
+    <div class="card"><h2>Riskiest resources <span class="dim">risk lives here, not on the agent</span></h2>
+    ${s.riskiest.length ? `<table><tbody>${s.riskiest.map(r=>`<tr>
+        <td class="mono">${esc(short(r.label))}<div><span class="pill ${esc(r.class)}">${esc(r.class)}</span></div></td>
+        <td style="white-space:nowrap">${r.risk.toFixed(3)}<div class="bar"><i style="width:${r.risk*100}%"></i></div></td>
       </tr>`).join('')}</tbody></table>`
-      : '<div class="empty">no resources scored yet</div>'}
+      : '<div class="empty">no resources scored yet</div>'}</div>
   </div>
-  <div class="card">
-    <h2>Recent alerts</h2>${alertRows(a)}
-  </div>`;
+  <div class="card"><h2>Recent alerts</h2>${alertRows(a)}</div>
+  ${(L.failed_open||0) ? `<div class="note hard"><b>${L.failed_open} decisions failed open.</b>
+    The engine exceeded its budget or threw, and those calls went through unevaluated.
+    Fail-open is the correct default, but a non-zero count here means detection was not running.</div>` : ''}`;
 }
 
 function alertRows(a){
@@ -167,22 +214,23 @@ function alertRows(a){
     <td class="mono">${esc(x.tool)}<div class="faint mono">${esc(short(x.resource))}</div></td>
     <td><span class="${vClass(x.verdict)}">${esc(x.verdict.toUpperCase())}</span>
         <div class="faint">${x.score.toFixed(2)}</div></td>
-    <td>${(x.detectors||[]).map(d=>`<div class="det"><b>${esc(d.detector)}</b></div>`).join('')}
-        <div class="sentence ${esc(x.verdict)}">${esc(x.sentence)}</div></td>
+    <td>${evs(x.detectors)}<div class="sentence ${esc(x.verdict)}">${esc(x.sentence)}</div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 
 // ---------- sessions ----------
 async function sessions(){
+  if(session) return timeline();
   const s = await api('/v1/sessions');
-  if(!s.length){ app.innerHTML = emptyHint(); return; }
-  app.innerHTML = `<div class="card"><h2>Sessions</h2>
+  if(!s.length){ app.innerHTML = head('Sessions','Every run, step by step') + emptyHint(); return; }
+  app.innerHTML = head('Sessions','The sequence is the evidence — open one to read it') + `
+  <div class="card">
   <table><thead><tr><th>agent</th><th>events</th><th>alerts</th><th>started</th></tr></thead>
   <tbody>${s.map(x=>`<tr class="click" data-s="${esc(x.session_id)}">
     <td>${esc(x.agent_id)}<div class="faint mono">${esc(x.session_id.slice(0,18))}…</div></td>
     <td>${x.events}</td>
     <td>${x.alerts ? `<span class="v block">${x.alerts}</span>` : '<span class="dim">0</span>'}</td>
-    <td class="dim">${esc((x.started||'').replace('T',' ').slice(0,19))}</td>
+    <td class="dim">${when(x.started)}</td>
   </tr>`).join('')}</tbody></table></div>`;
   app.querySelectorAll('tr.click').forEach(tr =>
     tr.onclick = () => { session = tr.dataset.s; timeline(); });
@@ -191,8 +239,9 @@ async function sessions(){
 // ---------- the hero screen ----------
 async function timeline(){
   const t = await api('/v1/sessions/' + encodeURIComponent(session));
-  app.innerHTML = `<button class="back">← sessions</button>
-  <div class="card"><h2>Session timeline — ${esc(t[0]?.tool ? '' : '')}${esc(session.slice(0,24))}…</h2>
+  app.innerHTML = head('Session timeline', esc(session)) + `
+  <button class="btn back">← sessions</button>
+  <div class="card">
   <table><thead><tr><th>#</th><th>tool</th><th>resource</th><th>verdict</th><th>evidence</th></tr></thead>
   <tbody>${t.map(e=>`<tr>
     <td class="dim">${e.step}</td>
@@ -204,74 +253,306 @@ async function timeline(){
     <td>${(e.detectors||[]).map(d=>`<div class="det"><b>${esc(d.detector)}</b>
           <span class="dim">${esc(d.detail||'')}</span></div>`).join('')}
         ${e.sentence ? `<div class="sentence ${esc(e.verdict)}">${esc(e.sentence)}</div>` : ''}</td>
-  </tr>`).join('')}</tbody></table></div>`;
+  </tr>`).join('')}</tbody></table>
+  <div class="note">No single row here needs to be forbidden. <b>A sequence of them can be.</b>
+  A per-call policy engine sees only one row at a time.</div></div>`;
   app.querySelector('.back').onclick = () => { session = null; sessions(); };
 }
 
-// ---------- agents & trust ----------
+// ---------- agents ----------
 async function agents(){
   const a = await api('/v1/agents');
-  if(!a.length){ app.innerHTML = emptyHint(); return; }
-  const zc = z => z === 'hot' ? 'var(--block)' : z === 'warm' ? 'var(--ask)' : 'var(--allow)';
-  app.innerHTML = `<div class="card">
-    <h2>Agents <span class="dim">— trust falls fast on signals and recovers
-      slowly; zones gate sensitive actions only</span></h2>
-  <table><thead><tr><th>agent</th><th>zone</th><th>trust</th>
-    <th>events</th><th></th></tr></thead>
-  <tbody>${a.map(x=>`<tr data-id="${esc(x.agent_id)}">
-    <td>${esc(x.agent_id)}
-        <div class="faint">baseline: ${esc(x.baseline_state||'?')}</div>
-        ${x.quarantined ? '<div class="quar">QUARANTINED</div>' : ''}</td>
-    <td><span class="zone ${esc(x.zone||'cold')}">${esc((x.zone||'cold').toUpperCase())}</span>
-        ${x.hot_signals ? `<div class="faint">${x.hot_signals} signals while hot</div>` : ''}</td>
-    <td>${(x.trust??1).toFixed(2)}
-        <div class="tmeter"><i style="width:${(x.trust??1)*100}%;background:${zc(x.zone)}"></i></div></td>
-    <td class="dim">${x.events??0}</td>
-    <td>${x.quarantined
-      ? '<button class="btn ok" data-rel="1">Release</button>'
-      : '<span class="faint">—</span>'}</td>
-  </tr>`).join('')}</tbody></table></div>`;
+  if(!a.length){ app.innerHTML = head('Agents','Every monitored agent') + emptyHint(); return; }
+  if(!picked || !a.some(x => x.agent_id === picked)) picked = a[0].agent_id;
+  const q = query.toLowerCase();
+  const rows = a.filter(x => !q || x.agent_id.toLowerCase().includes(q));
+  app.innerHTML = head('Agents','Trust falls fast on signals and recovers slowly; zones gate sensitive actions only') + `
+  <div class="g2">
+    <div class="card"><h2>All agents <span class="dim">${rows.length} of ${a.length}</span></h2>
+      <div class="tb"><input class="srch" id="q" placeholder="Search agents" value="${esc(query)}"></div>
+      ${rows.length ? `<table><thead><tr><th>agent</th><th>zone</th><th>trust</th><th>events</th><th></th></tr></thead>
+      <tbody>${rows.map(x=>`<tr class="click" data-id="${esc(x.agent_id)}">
+        <td>${esc(x.agent_id)}<div class="faint">baseline: ${esc(x.baseline_state||'?')}</div>
+            ${x.quarantined ? '<div class="quar">QUARANTINED</div>' : ''}</td>
+        <td><span class="zone ${esc(x.zone||'cold')}">${esc(ZONE[x.zone]||'Safe')}</span>
+            ${x.hot_signals ? `<div class="faint">${x.hot_signals} signals while hot</div>` : ''}</td>
+        <td>${(x.trust??1).toFixed(2)}
+            <div class="tmeter"><i style="width:${(x.trust??1)*100}%;background:${zc(x.zone)}"></i></div></td>
+        <td class="dim">${x.events??0}</td>
+        <td>${x.quarantined
+          ? '<button class="btn ok" data-rel="1">Release</button>'
+          : '<button class="btn no" data-res="1">Restrict</button>'}</td>
+      </tr>`).join('')}</tbody></table>` : '<div class="empty">no agent matches that search</div>'}
+    </div>
+    <div class="card" id="prof"><h2>Profile</h2><div class="empty">loading…</div></div>
+  </div>`;
+  $('#q').oninput = e => { query = e.target.value;
+    clearTimeout(window._qt); window._qt = setTimeout(agents, 250); };
+  app.querySelectorAll('tr.click').forEach(tr => tr.onclick = e => {
+    if(e.target.closest('button')) return;
+    picked = tr.dataset.id; profile(); });
+  wireAgentButtons();
+  profile();
+}
 
-  app.querySelectorAll('button[data-rel]').forEach(b => b.onclick = async () => {
+function wireAgentButtons(){
+  app.querySelectorAll('button[data-rel],button[data-res]').forEach(b => b.onclick = async () => {
     b.disabled = true;
-    const id = b.closest('tr').dataset.id;
-    await fetch(`/v1/agents/${encodeURIComponent(id)}/release`, {method:'POST'});
+    const id = (b.closest('tr') || b.closest('[data-id]')).dataset.id;
+    const verb = b.dataset.rel ? 'release' : 'restrict';
+    await fetch(`/v1/agents/${encodeURIComponent(id)}/${verb}`, {method:'POST'});
     render();
   });
+}
+
+async function profile(){
+  const el = $('#prof'); if(!el) return;
+  let b;
+  try { b = await api('/v1/agents/' + encodeURIComponent(picked) + '/behavior'); }
+  catch(e){ el.innerHTML = '<h2>Profile</h2><div class="empty">could not load</div>'; return; }
+  el.innerHTML = `<h2>${esc(b.agent_id)} <span class="dim">profile</span></h2>
+    <div class="big">${(b.trust??1).toFixed(2)}<span class="dim" style="font:400 12px var(--fui)"> trust</span></div>
+    <div class="tmeter" style="max-width:none"><i style="width:${(b.trust??1)*100}%;background:${zc(b.zone)}"></i></div>
+    <div class="row"><span>Zone</span><span><span class="zone ${esc(b.zone)}">${esc(ZONE[b.zone]||'Safe')}</span></span></div>
+    <div class="row"><span>Last trust change</span><span>${when(b.trust_updated)}</span></div>
+    <div class="row"><span>Events seen</span><span>${num(b.events)}</span></div>
+    ${b.quarantined ? '<div class="quar">QUARANTINED — a human clears this</div>' : ''}
+
+    <p class="dim" style="margin:16px 0 6px;font-size:11px">NORMAL BEHAVIOUR — where its calls go</p>
+    ${b.classes.length ? b.classes.map(c=>`<div class="row"><span>${esc(c.class)}</span><span>${c.events} · ${c.pct}%</span></div>
+      <div class="bar" style="max-width:none"><i style="width:${c.pct}%;background:${
+        ['secret','shell','network_egress'].includes(c.class)?'var(--acc)':'var(--mut)'}"></i></div>`).join('')
+      : '<div class="empty">nothing observed yet</div>'}
+
+    ${b.tools.length ? `<p class="dim" style="margin:16px 0 6px;font-size:11px">TOOLS IT USES</p>
+      ${b.tools.slice(0,5).map(t=>`<div class="row"><span class="mono">${esc(t.tool)}</span><span>${t.events}</span></div>`).join('')}`:''}
+
+    <p class="dim" style="margin:16px 0 6px;font-size:11px">OUTSIDE THAT — every non-ALLOW decision</p>
+    ${b.outside.length ? b.outside.map(o=>`<div style="margin-bottom:10px">
+      <span class="${vClass(o.verdict)}">${esc(o.verdict.toUpperCase())}</span>
+      <span class="mono dim" style="font-size:11px"> ${esc(short(o.resource))}</span>
+      <span class="pill ${esc(o.class)}">${esc(o.class)}</span>
+      <div class="sentence ${esc(o.verdict)}">${esc(o.sentence)}</div></div>`).join('')
+      : '<div class="empty">nothing has fallen outside it</div>'}
+
+    <div class="acts" data-id="${esc(b.agent_id)}">${b.quarantined
+      ? '<button class="btn ok" data-rel="1">Release from quarantine</button>'
+      : '<button class="btn no" data-res="1">Restrict agent</button>'}</div>
+    <div class="note">Baseline distribution is computed from observed events. The proxy's own
+    statistical baseline lives in that process and is never shipped here.</div>`;
+  wireAgentButtons();
+}
+
+// ---------- behavioural web ----------
+async function graph(){
+  const g = await api('/v1/graph');
+  if(!g.nodes.length){ app.innerHTML = head('Behavioural web','Agents, tools and resources') + emptyHint(); return; }
+  const SENS = ['secret','shell','network_egress'];
+  const byId = Object.fromEntries(g.nodes.map(n => [n.id, n]));
+  // A "dangerous" edge ends on a sensitive resource that has been reinforced
+  // above its class floor — i.e. something actually fired on it, not merely
+  // that the class is sensitive. Drawn dashed crimson.
+  const danger = e => { const d = byId[e.dst];
+    return !!d && SENS.includes(d.class) && d.risk > (d.risk_floor ?? 0) + 1e-6; };
+  const hot = g.nodes.filter(n => SENS.includes(n.class))
+                     .sort((a,b) => b.risk - a.risk).slice(0, 8);
+  app.innerHTML = head('Behavioural web','Risk lives on nodes and edges — never on an agents table') + `
+  <div class="g2">
+    <div class="card"><h2>Ecosystem graph
+      <span class="dim">${g.nodes.length} nodes · ${g.edges.length} edges</span></h2>
+      <div id="cy"></div>
+      <div class="key"><span><i style="background:var(--safe)"></i>Low risk</span>
+        <span><i style="background:var(--warn)"></i>Elevated</span>
+        <span><i style="background:var(--acc)"></i>High</span>
+        <span><i style="background:var(--mut)"></i>Agent</span>
+        <span><i class="dash"></i>Reinforced sensitive edge</span></div>
+    </div>
+    <div class="card" id="side"><h2>Dangerous paths</h2>
+      ${hot.length ? hot.map(n=>`<div style="margin-bottom:12px">
+        <div class="mono" style="font-size:11.5px">${esc(short(n.label||n.id))}</div>
+        <div><span class="pill ${esc(n.class)}">${esc(n.class)}</span>
+          <span class="dim" style="font-family:var(--fdata);font-size:11px"> risk ${n.risk.toFixed(3)}
+          · floor ${(n.risk_floor??0).toFixed(2)} · seen ${n.observations}×</span></div>
+        <div class="bar" style="max-width:none"><i style="width:${n.risk*100}%"></i></div>
+      </div>`).join('') : '<div class="empty">no sensitive resource has been reached</div>'}
+      <div class="note">Click an agent node in the graph to see what it reached and restrict it.</div>
+    </div>
+  </div>`;
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  const risky = r => r > .5 ? css('--acc') : r > .25 ? css('--warn') : css('--safe');
+  const cy = cytoscape({
+    container: $('#cy'),
+    elements: [
+      ...g.nodes.map(n => ({data:{id:n.id, label:n.label?.slice(0,26)||n.id,
+                                  kind:n.kind, risk:n.risk}})),
+      ...g.edges.filter(e => byId[e.src] && byId[e.dst])
+               .map(e => ({data:{id:e.id, source:e.src, target:e.dst,
+                                 w:Math.min(6,1+e.count/4), bad: danger(e)?1:0}}))
+    ],
+    style: [
+      {selector:'node', style:{
+        'label':'data(label)','font-size':9,'font-family':'Roboto','color':css('--tx2'),
+        'text-valign':'bottom','text-margin-y':4,
+        'background-color': e => e.data('kind')==='agent' ? css('--mut') : risky(e.data('risk')),
+        'width': e => e.data('kind')==='agent'?26:16,
+        'height': e => e.data('kind')==='agent'?26:16,
+        'shape': e => e.data('kind')==='agent'?'round-rectangle':'ellipse'}},
+      {selector:'edge', style:{'width':'data(w)','line-color':css('--line'),
+        'target-arrow-color':css('--line'),'target-arrow-shape':'triangle',
+        'curve-style':'bezier','arrow-scale':.7}},
+      {selector:'edge[bad = 1]', style:{'line-color':css('--acc'),
+        'target-arrow-color':css('--acc'),'line-style':'dashed','width':2.5}}
+    ],
+    layout:{name:'cose', animate:false, nodeRepulsion:9000, idealEdgeLength:70}
+  });
+  cy.on('tap','node', ev => {
+    const n = byId[ev.target.id()];
+    if(n && n.kind === 'agent'){ picked = n.label || n.id.replace(/^agent:/,''); agentSide(); }
+  });
+}
+
+async function agentSide(){
+  const el = $('#side'); if(!el) return;
+  let b;
+  try { b = await api('/v1/agents/' + encodeURIComponent(picked) + '/behavior'); }
+  catch(e){ el.innerHTML = `<h2>Dangerous paths</h2><div class="empty">no profile for ${esc(picked)}</div>`; return; }
+  el.innerHTML = `<h2>${esc(b.agent_id)}</h2>
+    <div class="row"><span>Trust</span><span>${(b.trust??1).toFixed(2)}
+      <span class="zone ${esc(b.zone)}">${esc(ZONE[b.zone]||'Safe')}</span></span></div>
+    <p class="dim" style="margin:14px 0 6px;font-size:11px">WHAT IT REACHED THAT IT SHOULD NOT HAVE</p>
+    ${b.outside.length ? b.outside.map(o=>`<div style="margin-bottom:10px">
+      <span class="${vClass(o.verdict)}">${esc(o.verdict.toUpperCase())}</span>
+      <span class="mono dim" style="font-size:11px"> ${esc(short(o.resource))}</span>
+      <div class="sentence ${esc(o.verdict)}">${esc(o.sentence)}</div></div>`).join('')
+      : '<div class="empty">nothing — every call matched its baseline</div>'}
+    <div class="acts" data-id="${esc(b.agent_id)}">${b.quarantined
+      ? '<button class="btn ok" data-rel="1">Release from quarantine</button>'
+      : '<button class="btn no" data-res="1">Restrict agent</button>'}</div>`;
+  wireAgentButtons();
+}
+
+// ---------- trust zones ----------
+async function trust(){
+  const [a, p] = await Promise.all([api('/v1/agents'), api('/v1/policy')]);
+  const tz = p.trust_zones || {};
+  const col = (z, title, what) => { const list = a.filter(x => (x.zone||'cold') === z);
+    return `<div class="card"><h2>${title} <span class="dim">${list.length}</span></h2>
+      <p class="dim" style="font-size:11.5px;margin:0 0 8px">${what}</p>
+      ${list.length ? `<div class="list">${list.map(x=>`<div data-id="${esc(x.agent_id)}">
+        <span>${esc(x.agent_id)}${x.quarantined?'<div class="quar">QUARANTINED</div>':''}</span>
+        <span class="mono dim">${(x.trust??1).toFixed(2)}</span></div>`).join('')}</div>`
+        : '<div class="empty">none</div>'}</div>`; };
+  app.innerHTML = head('Trust zones','How much freedom each agent has right now') + `
+  <div class="g3">
+    ${col('cold','Safe','Runs automatically.')}
+    ${col('warm','Caution','Sensitive actions need approval.')}
+    ${col('hot','Restricted','Sensitive actions are blocked.')}
+  </div>
+  <div class="g2" style="margin-top:16px">
+    <div class="card"><h2>Trust, now</h2>
+      ${a.length ? `<table><thead><tr><th>agent</th><th>trust</th><th>zone</th><th>last change</th></tr></thead>
+      <tbody>${a.map(x=>`<tr><td>${esc(x.agent_id)}</td>
+        <td>${(x.trust??1).toFixed(2)}<div class="tmeter"><i style="width:${(x.trust??1)*100}%;background:${zc(x.zone)}"></i></div></td>
+        <td><span class="zone ${esc(x.zone||'cold')}">${esc(ZONE[x.zone]||'Safe')}</span></td>
+        <td class="dim">${when(x.trust_updated)}</td></tr>`).join('')}</tbody></table>`
+        : '<div class="empty">no agents yet</div>'}
+      <div class="note">Only the current value is stored. There is no trust history table, so
+      this is a snapshot, not a trend — the <b>last change</b> column is as far back as it goes.</div>
+    </div>
+    <div class="card"><h2>Thresholds</h2>
+      <div class="row"><span>Caution below</span><span>${tz.warm_below ?? '—'}</span></div>
+      <input type="range" min="0" max="1" step="0.05" value="${tz.warm_below ?? 0.7}" disabled style="width:100%">
+      <div class="row"><span>Restricted below</span><span>${tz.hot_below ?? '—'}</span></div>
+      <input type="range" min="0" max="1" step="0.05" value="${tz.hot_below ?? 0.3}" disabled style="width:100%">
+      <div class="row"><span>Quarantine after</span><span>${tz.quarantine_after ?? '—'} signals while hot</span></div>
+      <div class="row"><span>Ask above score</span><span>${p.thresholds?.ask ?? '—'}</span></div>
+      <div class="row"><span>Block above score</span><span>${p.thresholds?.block ?? '—'}</span></div>
+      <div class="note">These are compiled-in constants, shown read-only on purpose.
+      Making them editable means moving them into config first — a slider that silently
+      does nothing is worse than no slider.</div>
+    </div>
+  </div>`;
+}
+
+// ---------- threat signals ----------
+async function signals(){
+  const s = await api('/v1/signals');
+  app.innerHTML = head('Threat signals','Suspicion that belongs to the place, not the visitor') + `
+  <div class="g2">
+    <div class="card"><h2>Corroborated resources</h2>
+      ${s.length ? `<table><thead><tr><th>resource</th><th>class</th><th>agents</th>
+        <th>strength</th><th>trend</th></tr></thead>
+      <tbody>${s.map(x=>`<tr>
+        <td class="mono">${esc(short(x.label))}<div class="faint">${esc(x.detectors.map(d=>d.detector).join(', '))}</div></td>
+        <td><span class="pill ${esc(x.class)}">${esc(x.class)}</span></td>
+        <td><b style="font-family:var(--fdata)">${x.agents}</b>
+            <div class="faint">${x.reports} report${x.reports===1?'':'s'}</div></td>
+        <td>${x.risk.toFixed(3)}<div class="bar"><i style="width:${x.risk*100}%"></i></div>
+            <div class="faint">floor ${x.risk_floor.toFixed(2)}</div></td>
+        <td><span class="trend ${esc(x.trend)}">${x.trend==='rising'?'↑':x.trend==='decaying'?'↓':'→'} ${esc(x.trend)}</span>
+            <div class="faint">${when(x.last_signal)}</div></td>
+      </tr>`).join('')}</tbody></table>`
+      : '<div class="empty">no resource has been flagged yet</div>'}</div>
+    <div class="card"><h2>How a signal moves</h2>
+      <p class="dim" style="font-size:12px">Every independent agent that behaves suspiciously around a
+      resource strengthens its signal. If the resource then behaves normally, the signal fades —
+      exponentially, toward a floor set by the resource's class.</p>
+      <div class="note"><b>weight × (1 + ln(distinct agents))</b><br>
+      Distinct, not repeated. Keying on distinct reporters is what stops a single looping
+      agent from manufacturing its own corroboration.</div>
+      <p class="dim" style="font-size:12px;margin-top:14px">A secrets store never cools below
+      <b style="color:var(--tx)">0.30</b>. It is never "safe" — only "not currently suspicious".</p>
+      <div class="note">An agent with a clean record inherits suspicion the moment it touches
+      somewhere others got caught. That is <b>resource_reputation</b>, and it is the whole
+      reason risk lives on the graph.</div>
+    </div>
+  </div>`;
+}
+
+// ---------- alerts ----------
+async function alerts(){
+  const a = await api('/v1/alerts');
+  app.innerHTML = head('Alerts','Only decisions above ALLOW, each with the evidence behind it')
+    + `<div class="card">${alertRows(a)}
+    <div class="note">Every row carries a sentence a non-engineer can act on.
+    <b>A decision that cannot produce one is not allowed to block.</b></div></div>`;
 }
 
 // ---------- approvals ----------
 async function approvals(){
   const a = await api('/v1/approvals');
   if(!a.length){
-    app.innerHTML = `<div class="card"><div class="empty">
+    app.innerHTML = head('Approvals','Actions paused for a human decision') + `
+      <div class="card"><div class="empty">
       <p>No pending approvals.</p>
-      <p class="dim">An ASK verdict in <code>enforce</code> mode opens one here
-      and suspends the agent's call until you answer.<br>
-      Unanswered requests expire and are <b>denied</b>.</p></div></div>`;
+      <p class="dim">An ASK verdict in <code>enforce</code> mode opens one here and suspends
+      the agent's call until you answer.<br>Unanswered requests expire and are <b>denied</b>.</p>
+      </div></div>`;
     return;
   }
-  app.innerHTML = `<div class="card"><h2>Pending approvals
-    <span class="dim">— an agent is blocked waiting on each of these</span></h2>
-  <table><thead><tr><th>agent</th><th>action</th><th>why</th><th></th></tr></thead>
-  <tbody>${a.map(x=>`<tr data-id="${esc(x.id)}">
-    <td>${esc(x.agent_id||'?')}<div class="faint">step ${x.step??'?'}</div>
-        <div class="ttl" data-exp="${esc(x.expires_at)}"></div></td>
-    <td class="mono">${esc(x.tool)}
-        <div class="faint mono">${esc(short(x.resource))}</div>
-        <div><span class="pill ${esc(x.class)}">${esc(x.class)}</span></div></td>
-    <td>${(x.detectors||[]).map(d=>`<div class="det"><b>${esc(d.detector)}</b></div>`).join('')}
-        <div class="sentence ask">${esc(x.sentence)}</div></td>
-    <td><div class="acts">
-      <button class="btn ok" data-a="1">Approve</button>
+  app.innerHTML = head('Approvals','An agent is blocked waiting on each of these') + `
+  <div class="g3">${a.map(x=>`<div class="card" data-id="${esc(x.id)}">
+    <h2>${esc(x.agent_id||'?')} <span class="ttl" data-exp="${esc(x.expires_at)}"></span></h2>
+    <div class="mono" style="font-size:12px">${esc(x.tool)}</div>
+    <div class="mono faint">${esc(short(x.resource))}</div>
+    <div style="margin-top:6px"><span class="pill ${esc(x.class)}">${esc(x.class)}</span></div>
+    ${evs(x.detectors)}
+    <div class="sentence ask">${esc(x.sentence)}</div>
+    <div class="acts">
+      <button class="btn pri" data-a="1">Approve</button>
       <button class="btn no" data-a="0">Deny</button>
-    </div></td>
-  </tr>`).join('')}</tbody></table></div>`;
+    </div>
+    <label class="faint" style="display:flex;gap:6px;align-items:center;margin-top:10px">
+      <input type="checkbox" disabled> Remember for similar actions
+      <span class="ev">not implemented</span></label>
+  </div>`).join('')}</div>
+  <div class="note">A request that nobody answers is <b>denied</b>, never allowed.
+  Silence must not be a yes.</div>`;
 
   app.querySelectorAll('button[data-a]').forEach(b => b.onclick = async () => {
-    const tr = b.closest('tr');
-    tr.querySelectorAll('button').forEach(x => x.disabled = true);
-    await fetch(`/v1/approvals/${encodeURIComponent(tr.dataset.id)}/decide`, {
+    const cardEl = b.closest('[data-id]');
+    cardEl.querySelectorAll('button').forEach(x => x.disabled = true);
+    await fetch(`/v1/approvals/${encodeURIComponent(cardEl.dataset.id)}/decide`, {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({approve: b.dataset.a === '1', who: 'dashboard'})
     });
@@ -321,81 +602,153 @@ async function refreshCount(){
 // ---------- shadow ----------
 async function shadow(){
   const s = await api('/v1/shadow');
-  app.innerHTML = `
+  app.innerHTML = head('Shadow','What enforce mode would have done, without doing it') + `
   <div class="kpis">
-    <div class="kpi"><div class="n">${s.total_events}</div><div class="l">events seen</div></div>
-    <div class="kpi"><div class="n" style="color:var(--block)">${s.would_block}</div><div class="l">would block</div></div>
-    <div class="kpi"><div class="n" style="color:var(--ask)">${s.would_ask}</div><div class="l">would ask</div></div>
+    <div class="kpi"><div class="n">${num(s.total_events)}</div><div class="l">events seen</div></div>
+    <div class="kpi"><div class="n" style="color:${s.would_block?'var(--acc)':'var(--safe)'}">${s.would_block}</div><div class="l">would block</div></div>
+    <div class="kpi"><div class="n" style="color:${s.would_ask?'var(--warn)':'var(--safe)'}">${s.would_ask}</div><div class="l">would ask</div></div>
     <div class="kpi"><div class="n">${(s.rate*100).toFixed(2)}%</div><div class="l">intervention rate</div></div>
   </div>
-  <div class="card">
-    <h2>What enforce mode would have done</h2>
-    <p class="dim" style="margin-top:-6px">Run in <code>observe</code> for at least
-    two weeks and read this before switching to <code>enforce</code>.
-    On your own normal work, every row here is a false positive.</p>
+  <div class="card"><h2>What enforce mode would have done</h2>
     ${s.items.length ? `<table><thead><tr><th>agent</th><th>action</th><th>what it would have done</th></tr></thead>
     <tbody>${s.items.map(x=>`<tr>
-      <td>${esc(x.agent_id)}<div class="faint">${esc((x.ts||'').replace('T',' ').slice(0,19))}</div></td>
+      <td>${esc(x.agent_id)}<div class="faint">${when(x.ts)}</div></td>
       <td class="mono">${esc(x.tool)}<div class="faint mono">${esc(short(x.resource))}</div></td>
-      <td>${(x.detectors||[]).map(d=>`<div class="det"><b>${esc(d.detector)}</b></div>`).join('')}
-          <div class="sentence">${esc(x.sentence)}</div></td>
+      <td>${evs(x.detectors)}<div class="sentence">${esc(x.sentence)}</div></td>
     </tr>`).join('')}</tbody></table>`
     : '<div class="empty">nothing would have been intervened on</div>'}
+    <div class="note hard">On your own ordinary work every row above is a <b>false positive</b> —
+    nobody is attacking your project. Stay in <code>observe</code> until this screen reads
+    <b>would block: 0</b> for two clean weeks.</div>
   </div>`;
 }
 
-// ---------- alerts ----------
-async function alerts(){
-  const a = await api('/v1/alerts');
-  app.innerHTML = `<div class="card"><h2>All alerts</h2>${alertRows(a)}</div>`;
+// ---------- policies ----------
+async function policies(){
+  const p = await api('/v1/policy');
+  const errs = Object.entries(p.errors || {});
+  const t1 = p.detectors?.tier1 || [], t2 = p.detectors?.tier2 || [];
+  const sc = p.short_circuit || [];
+  app.innerHTML = head('Policies','The rules on top of learned behaviour') + `
+  <div class="g2">
+    <div class="card"><h2>Effective policy <span class="dim">in force in this process</span></h2>
+      <table><thead><tr><th>on</th><th>rule</th><th>applies to</th><th>action</th></tr></thead><tbody>
+      ${sc.map(d=>`<tr><td><span class="tg on"></span></td>
+        <td>${esc(d)}<div class="faint">short-circuits regardless of score</div></td>
+        <td class="dim">all agents</td><td><span class="v block">BLOCK</span></td></tr>`).join('')}
+      <tr><td><span class="tg on"></span></td><td>Score at or above ${p.thresholds?.block}
+        <div class="faint">combined detector + graph + trust</div></td>
+        <td class="dim">all agents</td><td><span class="v block">BLOCK</span></td></tr>
+      <tr><td><span class="tg on"></span></td><td>Score at or above ${p.thresholds?.ask}</td>
+        <td class="dim">all agents</td><td><span class="v ask">ASK</span></td></tr>
+      <tr><td><span class="tg on"></span></td><td>Everything else</td>
+        <td class="dim">all agents</td><td><span class="v allow">ALLOW</span></td></tr>
+      </tbody></table>
+      <div class="note">Per-rule configuration lives in <b>weaver.config.json</b> and is loaded by
+      the <b>proxy</b>, not by the control plane — so this screen can show the compiled-in policy
+      exactly, and cannot yet list your custom rules or count their hits.</div>
+    </div>
+    <div class="card"><h2>Score weights</h2>
+      ${Object.entries(p.weights||{}).map(([k,v])=>`<div class="row"><span>${esc(k)}</span><span>${v}</span></div>`).join('')}
+      <div class="note">Tier 1 dominates on purpose. A product that blocks on accumulated
+      suspicion rather than an identifiable event cannot explain itself.</div>
+      <h2 style="margin-top:18px">Detectors <span class="dim">${t1.length + t2.length} registered</span></h2>
+      <div class="row"><span>Inline (tier 1)</span><span>${t1.length}</span></div>
+      <div class="row"><span>Deferred (tier 2 + 3)</span><span>${t2.length}</span></div>
+      <div class="row"><span>Crashed this run</span>
+        <span style="color:${errs.length?'var(--acc)':'var(--safe)'}">${errs.length}</span></div>
+      ${errs.length ? `<div class="note hard">${errs.map(([k,v])=>`<b>${esc(k)}</b> raised ${v}×`).join('<br>')}
+        <br>A detector that throws is counted, not swallowed.</div>` : ''}
+      <div style="margin-top:10px">${[...t1,...t2].map(d=>`<span class="ev">${esc(d)}</span>`).join('')}</div>
+    </div>
+  </div>`;
 }
 
-// ---------- graph ----------
-async function graph(){
-  const g = await api('/v1/graph');
-  if(!g.nodes.length){ app.innerHTML = emptyHint(); return; }
-  app.innerHTML = `<div class="card"><h2>Behavioural graph
-    <span class="dim">— ${g.nodes.length} nodes, ${g.edges.length} edges;
-    colour is risk, which lives on the graph, not on the agent</span></h2>
-    <div id="cy"></div></div>`;
-  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
-  const risky = r => r > .5 ? css('--block') : r > .25 ? css('--ask') : css('--accent');
-  cytoscape({
-    container: $('#cy'),
-    elements: [
-      ...g.nodes.map(n => ({data:{id:n.id, label:n.label?.slice(0,26)||n.id,
-                                  kind:n.kind, risk:n.risk}})),
-      ...g.edges.filter(e => g.nodes.some(n=>n.id===e.src) && g.nodes.some(n=>n.id===e.dst))
-               .map(e => ({data:{id:e.id, source:e.src, target:e.dst, w:Math.min(6,1+e.count/4)}}))
-    ],
-    style: [
-      {selector:'node', style:{
-        'label':'data(label)','font-size':9,'color':css('--dim'),
-        'text-valign':'bottom','text-margin-y':4,
-        'background-color': e => e.data('kind')==='agent' ? css('--mag') : risky(e.data('risk')),
-        'width': e => e.data('kind')==='agent'?26:16,
-        'height': e => e.data('kind')==='agent'?26:16,
-        'shape': e => e.data('kind')==='agent'?'round-rectangle':'ellipse'}},
-      {selector:'edge', style:{'width':'data(w)','line-color':css('--line'),
-        'target-arrow-color':css('--line'),'target-arrow-shape':'triangle',
-        'curve-style':'bezier','arrow-scale':.7}}
-    ],
-    layout:{name:'cose', animate:false, nodeRepulsion:9000, idealEdgeLength:70}
-  });
+// ---------- audit log ----------
+async function audit(){
+  const d = await api('/v1/decisions?limit=250' + (query ? '&q=' + encodeURIComponent(query) : ''));
+  app.innerHTML = head('Audit log','Every decision, allows included — what an auditor asks for') + `
+  <div class="card"><h2>Decisions <span class="dim">${d.length} shown</span></h2>
+    <div class="tb"><input class="srch" id="q" placeholder="Search agent, tool, resource, reason" value="${esc(query)}"></div>
+    ${d.length ? `<table><thead><tr><th>time</th><th>agent</th><th>action</th><th>resource</th>
+      <th>risk</th><th>decision</th><th>reason</th></tr></thead>
+    <tbody>${d.map(x=>`<tr>
+      <td class="dim" style="white-space:nowrap">${when(x.ts)}</td>
+      <td>${esc(x.agent_id)}<div class="faint">step ${x.step}</div></td>
+      <td class="mono">${esc(x.tool)}<div class="faint">${esc(x.action)}</div></td>
+      <td class="mono">${esc(short(x.resource))||'<span class="faint">—</span>'}
+          <div><span class="pill ${esc(x.class)}">${esc(x.class)}</span></div></td>
+      <td>${(x.score||0).toFixed(2)}<div class="bar" style="max-width:70px"><i style="width:${(x.score||0)*100}%"></i></div></td>
+      <td><span class="${vClass(x.verdict)}">${esc(x.verdict.toUpperCase())}</span></td>
+      <td>${x.sentence ? esc(x.sentence) : '<span class="faint">matched baseline</span>'}</td>
+    </tr>`).join('')}</tbody></table>` : '<div class="empty">no decisions match</div>'}
+  </div>`;
+  $('#q').oninput = e => { query = e.target.value;
+    clearTimeout(window._qt); window._qt = setTimeout(audit, 300); };
+}
+
+// ---------- settings ----------
+async function settings(){
+  const [h, r, p] = await Promise.all([
+    api('/healthz').catch(()=>({})),
+    fetch('/readyz').then(x=>x.json()).catch(()=>({})),
+    api('/v1/policy').catch(()=>({}))]);
+  const errs = Object.entries(p.errors || {});
+  app.innerHTML = head('Settings','Setup, connections and what this install can and cannot do') + `
+  <div class="g2">
+    <div class="card"><h2>Agent frameworks</h2>
+      <div class="list">
+        <div><span>MCP <span class="faint">— stdio proxy</span></span><span class="zone cold">Enforcing</span></div>
+        <div><span>LangGraph</span><span class="zone warm">Advisory</span></div>
+        <div><span>CrewAI</span><span class="dim">Coming soon</span></div>
+        <div><span>AutoGen</span><span class="dim">Coming soon</span></div>
+        <div><span>OpenAI Agents SDK</span><span class="dim">Coming soon</span></div>
+      </div>
+      <div class="note">The LangGraph adapter observes and scores but <b>cannot block</b>.
+      MCP is the only enforcing path today.</div>
+    </div>
+    <div class="card"><h2>This install</h2>
+      <div class="row"><span>Version</span><span>${esc(h.version||'?')}</span></div>
+      <div class="row"><span>Process</span><span style="color:${h.ok?'var(--safe)':'var(--acc)'}">${h.ok?'up':'unknown'}</span></div>
+      <div class="row"><span>Schema</span><span style="color:${r.ok?'var(--safe)':'var(--acc)'}">${
+        r.schema ? 'v'+esc(r.schema.current)+(r.ok?' · current':' · behind') : 'unknown'}</span></div>
+      <div class="row"><span>Detectors registered</span><span>${(p.detectors?.tier1||[]).length + (p.detectors?.tier2||[]).length}</span></div>
+      <div class="row"><span>Detector errors</span>
+        <span style="color:${errs.length?'var(--acc)':'var(--safe)'}">${errs.length}</span></div>
+    </div>
+    <div class="card"><h2>Alerts</h2>
+      <div class="list">
+        <div><span>Webhook on approval requested</span><span class="tg on"></span></div>
+        <div><span>Webhook on approval decided</span><span class="tg on"></span></div>
+        <div><span>Webhook on agent restricted / released</span><span class="tg on"></span></div>
+      </div>
+      <div class="note">Alerts go to the single webhook URL passed to
+      <code>weaver api --webhook</code>. Per-channel routing and digests do not exist yet.</div>
+    </div>
+    <div class="card"><h2>Access &amp; data</h2>
+      <div class="row"><span>Authentication</span><span style="color:var(--acc)">none</span></div>
+      <div class="row"><span>Team roles</span><span class="dim">not available</span></div>
+      <div class="row"><span>API key rotation</span><span class="dim">not available</span></div>
+      <div class="row"><span>Data retention</span><span class="dim">unlimited</span></div>
+      <div class="note hard"><b>This API has no authentication.</b> It is local-first by design —
+      anyone who can reach this port can read every event and approve any request.
+      <b>Never expose port 8080.</b> Roles, key rotation and retention all wait on auth landing first.</div>
+    </div>
+  </div>`;
 }
 
 function emptyHint(){
   return `<div class="card"><div class="empty">
     <p>No data yet.</p>
-    <p class="dim">Load the scenario suite:<br>
-    <code>python3 -m weaver_api --demo</code></p>
+    <p class="dim">Load the scenario suite:<br><code>weaver api --demo</code></p>
     <p class="dim">Or point an agent at the proxy:<br>
-    <code>python3 -m weaver_proxy --config weaver.config.json --detect</code></p>
+    <code>weaver proxy --config weaver.config.json --detect --api http://127.0.0.1:8080</code></p>
   </div></div>`;
 }
 
 // ---------- shell ----------
-const views = {overview, sessions, agents, approvals, alerts, shadow, graph};
+const views = {overview, sessions, agents, graph, trust, signals, alerts,
+               approvals, shadow, policies, audit, settings};
 function render(){
   session = null;
   app.innerHTML = '<div class="empty">loading…</div>';
@@ -404,7 +757,7 @@ function render(){
 }
 document.querySelectorAll('nav button[data-v]').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button[data-v]').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on'); view = b.dataset.v; render();
+  b.classList.add('on'); view = b.dataset.v; query = ''; render(); window.scrollTo(0,0);
 });
 $('#theme').onclick = () => {
   const el = document.documentElement;

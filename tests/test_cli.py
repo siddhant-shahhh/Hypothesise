@@ -5,6 +5,8 @@ ADR-009 makes the first five minutes the thing this product is judged on, so
 deliverable rather than an afterthought.
 """
 
+from pathlib import Path
+
 import pytest
 from weaver.__main__ import build_parser, main
 
@@ -77,3 +79,16 @@ def test_parser_defaults():
 
     args = build_parser().parse_args(["proxy"])
     assert args.detect is False          # record-only unless asked
+
+
+def test_api_banner_names_the_dashboard_file_it_serves():
+    """"I changed the dashboard and nothing changed" has exactly one cause
+    worth checking first: a non-editable install leaves a real copy of the
+    static folder in site-packages, and that copy shadows the repo. The banner
+    prints the absolute path so the answer is on screen, not in a bug report."""
+    src = (Path(__file__).resolve().parents[1]
+           / "packages" / "cli" / "weaver" / "__main__.py").read_text()
+    body = src.split("def _cmd_api", 1)[1].split("def _cmd_proxy", 1)[0]
+    assert "STATIC" in body
+    assert "index.html" in body
+    assert "st_mtime" in body

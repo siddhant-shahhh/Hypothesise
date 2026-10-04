@@ -1,5 +1,6 @@
 """Control plane tests — ingest, queries, persistence, the dashboard."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -32,7 +33,7 @@ def test_dashboard_serves_html(client):
     c, _ = client
     r = c.get("/")
     assert r.status_code == 200
-    assert "WEAVER" in r.text
+    assert "GUARDENT" in r.text
     assert "cytoscape" in r.text.lower()
 
 
@@ -256,3 +257,140 @@ def test_live_refresh_stops_when_the_tab_is_hidden():
     """Otherwise every forgotten tab polls a local server forever."""
     html = STATIC.read_text()
     assert "visibilitychange" in html
+
+
+# --- views the dashboard needs ---------------------------------------------
+# Each of these backs one screen. They were added together because the screens
+# were designed first and the question "can the API actually serve this?" is
+# the only one that decides whether a design is a plan or a picture.
+
+
+def test_signals_counts_distinct_agents_not_reports(client):
+    """The corroboration term is `weight x (1 + ln(distinct))`. Counting
+    reports instead would let one looping agent corroborate itself."""
+    c, app = client
+    load_demo(app.state.repo, app.state.engine)
+    rows = c.get("/v1/signals").json()
+    assert rows, "demo traffic should leave signals behind"
+    for r in rows:
+        assert r["agents"] <= r["reports"]
+        assert r["trend"] in ("rising", "stable", "decaying")
+        assert r["risk"] >= r["risk_floor"] - 1e-9
+
+
+def test_signals_are_ordered_by_corroboration(client):
+    c, app = client
+    load_demo(app.state.repo, app.state.engine)
+    rows = c.get("/v1/signals").json()
+    assert [r["agents"] for r in rows] == sorted(
+        (r["agents"] for r in rows), reverse=True)
+
+
+def test_decision_log_includes_allows_and_alerts_does_not(client):
+    """An auditor asks what an agent DID, which has to include what it was let
+    through on. That is why this is a separate endpoint from /v1/alerts."""
+    c, app = client
+    load_demo(app.state.repo, app.state.engine)
+    log = c.get("/v1/decisions?limit=500").json()
+    alerts = c.get("/v1/alerts?limit=500").json()
+    assert any(d["verdict"] == "allow" for d in log)
+    assert all(a["verdict"] != "allow" for a in alerts)
+    assert len(log) >= len(alerts)
+
+
+def test_decision_log_search_filters(client):
+    c, app = client
+    load_demo(app.state.repo, app.state.engine)
+    everything = c.get("/v1/decisions?limit=500").json()
+    agent = everything[0]["agent_id"]
+    hits = c.get(f"/v1/decisions?limit=500&q={agent}").json()
+    assert hits and len(hits) <= len(everything)
+    assert all(agent in h["agent_id"] or agent in (h["sentence"] or "")
+               for h in hits)
+
+
+def test_decision_log_search_that_matches_nothing_is_empty(client):
+    c, app = client
+    load_demo(app.state.repo, app.state.engine)
+    assert c.get("/v1/decisions?q=zzz-no-such-thing").json() == []
+
+
+def test_agent_behavior_reports_observed_distribution(client):
+    """The proxy's statistical baseline never leaves that process, so the
+    control plane's honest answer to 'what is normal here' is what it saw."""
+    c, app = client
+    load_demo(app.state.repo, app.state.engine)
+    agent = c.get("/v1/agents").json()[0]["agent_id"]
+    b = c.get(f"/v1/agents/{agent}/behavior").json()
+    assert b["agent_id"] == agent
+    assert b["classes"], "an agent with events has a class distribution"
+    assert abs(sum(c_["pct"] for c_ in b["classes"]) - 100.0) < 1.0
+    assert all("tool" in t for t in b["tools"])
+    assert all(o["verdict"] != "allow" for o in b["outside"])
+
+
+def test_agent_behavior_404s_for_an_unknown_agent(client):
+    c, _ = client
+    assert c.get("/v1/agents/nope/behavior").status_code == 404
+
+
+def test_restrict_then_release_round_trips(client):
+    """The dashboard could clear a quarantine but not start one, so an operator
+    who saw something alarming had no action available at all."""
+    c, app = client
+    load_demo(app.state.repo, app.state.engine)
+    agent = c.get("/v1/agents").json()[0]["agent_id"]
+
+    r = c.post(f"/v1/agents/{agent}/restrict").json()
+    assert r["quarantined"] is True
+    assert r["zone"] == "hot"
+    assert r["trust"] <= 0.20
+
+    r = c.post(f"/v1/agents/{agent}/release").json()
+    assert r["quarantined"] is False
+    assert r["trust"] >= 0.70
+
+
+def test_restrict_404s_for_an_unknown_agent(client):
+    c, _ = client
+    assert c.post("/v1/agents/nope/restrict").status_code == 404
+
+
+def test_policy_reports_what_is_compiled_in(client):
+    c, _ = client
+    p = c.get("/v1/policy").json()
+    assert p["thresholds"]["ask"] < p["thresholds"]["block"]
+    assert p["trust_zones"]["hot_below"] < p["trust_zones"]["warm_below"]
+    # The three that block on their own, whatever the score says.
+    assert set(p["short_circuit"]) == {
+        "retry_after_denial", "sensitive_then_egress", "shell_exfil"}
+    assert len(p["detectors"]["tier1"]) + len(p["detectors"]["tier2"]) == 15
+    assert p["weights"]["tier1"] > p["weights"]["node"]
+
+
+# --- the redesigned dashboard ----------------------------------------------
+
+
+def test_dashboard_has_every_screen_the_nav_offers():
+    """A nav button with no view function is a dead tab."""
+    html = STATIC.read_text()
+    nav = set(re.findall(r'data-v="([a-z]+)"', html))
+    decl = re.search(r"const views = \{(.*?)\};", html, re.S).group(1)
+    assert nav, "nav buttons should exist"
+    assert nav <= set(re.findall(r"[a-z]+", decl))
+
+
+def test_dashboard_covers_the_designed_screens():
+    html = STATIC.read_text()
+    for screen in ("sessions", "agents", "graph", "trust", "signals",
+                   "alerts", "approvals", "shadow", "policies", "audit",
+                   "settings"):
+        assert f'data-v="{screen}"' in html, screen
+
+
+def test_dashboard_states_that_there_is_no_authentication():
+    """ADR-009 is a deliberate trade, not an oversight. The one place a user
+    could be misled about it is a Settings screen with a roles table on it."""
+    html = STATIC.read_text()
+    assert "no authentication" in html.lower()
+    assert "Never expose port 8080" in html

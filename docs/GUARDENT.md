@@ -573,8 +573,8 @@ troubleshooting table.
 
 ## 11. The dashboard
 
-`http://127.0.0.1:8080` — seven tabs. It refreshes the current view every five
-seconds and pauses on a hidden tab.
+`http://127.0.0.1:8080` — twelve screens. It refreshes the current view every
+five seconds and pauses on a hidden tab.
 
 | Tab | Question | Healthy |
 |---|---|---|
@@ -584,7 +584,12 @@ seconds and pauses on a hidden tab.
 | **Approvals** | what is waiting on me? | empty |
 | **Alerts** | what fired, and why? | empty during ordinary work |
 | **Shadow** | what would enforce mode do? | `would_block: 0` |
-| **Graph** | what has the agent reached? | risk near the class floors |
+| **Behavioural web** | what has the agent reached? | risk near the class floors; no dashed crimson edges |
+| **Trust zones** | who has how much freedom? | everyone in Safe |
+| **Threat signals** | what is the colony suspicious of? | few resources, low strength, decaying |
+| **Policies** | what would block, and why? | the three short-circuit detectors, thresholds unchanged |
+| **Audit log** | what did this agent do? | searchable; allows included |
+| **Settings** | what can this install actually do? | detector errors 0, schema current |
 
 **Agents is the fastest check.** If an agent drifts to WARM during normal work,
 detectors are firing that should not be, and **Alerts** says which.

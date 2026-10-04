@@ -432,7 +432,17 @@ curl -s localhost:8080/v1/agents
 curl -s localhost:8080/v1/detectors    # registered, and any crashing silently
 curl -s localhost:8080/v1/approvals    # pending approvals
 curl -s localhost:8080/v1/shadow       # what enforce would have done
+curl -s localhost:8080/v1/signals      # corroborated suspicion per resource
+curl -s localhost:8080/v1/decisions    # every decision, allows included
+curl -s 'localhost:8080/v1/decisions?q=secret'        # audit log search
+curl -s localhost:8080/v1/policy       # thresholds, weights, short-circuits
+curl -s localhost:8080/v1/agents/<id>/behavior        # observed normal + outliers
+curl -s -X POST localhost:8080/v1/agents/<id>/restrict # quarantine by hand
+curl -s -X POST localhost:8080/v1/agents/<id>/release  # clear a quarantine
 ```
+
+`/v1/alerts` is non-ALLOW only; `/v1/decisions` is everything. An auditor asks
+what an agent *did*, and that has to include what it was let through on.
 
 Send events in:
 

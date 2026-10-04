@@ -518,3 +518,191 @@ class Repo:
             "rate": round(len(items) / total, 5) if total else 0.0,
             "items": items,
         }
+
+    # -- views the dashboard needs -----------------------------------------
+
+    def threat_signals(self, limit: int = 50) -> list[dict]:
+        """Resources ranked by corroborated suspicion.
+
+        The `ix_signals_node_agent_ts` index was created for exactly this query
+        and nothing read it until now. What makes a signal strong is the number
+        of DISTINCT agents that reported the node, not the number of reports —
+        one looping agent must not be able to corroborate itself.
+
+        `trend` is derived, not stored: a node whose decayed risk still sits
+        near its stored value was reinforced recently and is rising; one that
+        has visibly cooled since `risk_updated` is decaying.
+        """
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                select(
+                    signals.c.node_id,
+                    func.count(func.distinct(signals.c.agent_id)).label("agents"),
+                    func.count().label("reports"),
+                    func.max(signals.c.ts).label("last_ts"),
+                )
+                .where(signals.c.node_id.isnot(None))
+                .group_by(signals.c.node_id)
+                .order_by(func.count(func.distinct(signals.c.agent_id)).desc(),
+                          func.count().desc())
+                .limit(limit)
+            ).fetchall()
+            if not rows:
+                return []
+            node_rows = conn.execute(
+                select(nodes).where(nodes.c.id.in_([r.node_id for r in rows]))
+            ).fetchall()
+            detail = conn.execute(
+                select(signals.c.node_id, signals.c.detector,
+                       func.count().label("n"))
+                .where(signals.c.node_id.in_([r.node_id for r in rows]))
+                .group_by(signals.c.node_id, signals.c.detector)
+            ).fetchall()
+
+        by_id = {n.id: n for n in node_rows}
+        dets: dict[str, list[dict]] = {}
+        for d in detail:
+            dets.setdefault(d.node_id, []).append(
+                {"detector": d.detector, "count": d.n})
+
+        out = []
+        for r in rows:
+            n = by_id.get(r.node_id)
+            if n is None:
+                continue
+            now = self._decayed(n)
+            stored = float(n.risk)
+            floor = float(n.risk_floor)
+            headroom = stored - floor
+            if headroom <= 1e-9:
+                trend = "stable"
+            elif now >= stored - 0.02 * max(headroom, 0.01):
+                trend = "rising"
+            elif now <= floor + 0.5 * headroom:
+                trend = "decaying"
+            else:
+                trend = "stable"
+            out.append({
+                "node_id": n.id,
+                "label": n.label or n.id,
+                "kind": n.kind,
+                "class": n._mapping["class"],
+                "agents": int(r.agents),
+                "reports": int(r.reports),
+                "risk": round(now, 4),
+                "risk_floor": round(floor, 4),
+                "confidence": round(float(n.confidence), 4),
+                "observations": int(n.observations),
+                "trend": trend,
+                "last_signal": r.last_ts,
+                "detectors": sorted(dets.get(n.id, []),
+                                    key=lambda d: -d["count"]),
+            })
+        return out
+
+    def decision_log(self, limit: int = 200, q: str = "") -> list[dict]:
+        """Every decision, allows included — the audit view.
+
+        `alerts()` deliberately returns only non-ALLOW rows, which makes it the
+        wrong source for an audit log: the question an auditor asks is "what did
+        this agent do", and the answer has to include everything it was let
+        through on.
+        """
+        stmt = (
+            select(decisions, events.c.agent_id, events.c.session_id,
+                   events.c.step, events.c.tool_server, events.c.tool_name,
+                   events.c.action, events.c.resource_uri,
+                   events.c.resource_class, events.c.status)
+            .join(events, events.c.event_id == decisions.c.event_id)
+        )
+        if q:
+            like = f"%{q}%"
+            stmt = stmt.where(
+                events.c.agent_id.like(like)
+                | events.c.tool_name.like(like)
+                | events.c.tool_server.like(like)
+                | events.c.resource_uri.like(like)
+                | decisions.c.sentence.like(like)
+                | decisions.c.verdict.like(like)
+            )
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                stmt.order_by(decisions.c.ts.desc()).limit(limit)).fetchall()
+        return [{
+            "event_id": r.event_id, "ts": r.ts, "agent_id": r.agent_id,
+            "session_id": r.session_id, "step": r.step,
+            "tool": f"{r.tool_server}/{r.tool_name}", "action": r.action,
+            "resource": r.resource_uri, "class": r.resource_class,
+            "status": r.status, "verdict": r.verdict,
+            "score": r.score, "sentence": r.sentence or "",
+            "detectors": json.loads(r.detectors) if r.detectors else [],
+        } for r in rows]
+
+    def agent_behavior(self, agent_id: str, limit: int = 10) -> dict | None:
+        """What this agent normally does, and what fell outside it.
+
+        Built from events rather than the proxy's baseline: the baseline lives
+        in the proxy process and is never shipped, so the control plane's only
+        honest answer to "what is normal for this agent" is the distribution of
+        what it has actually been seen doing.
+        """
+        base = self.agent(agent_id)
+        if base is None:
+            return None
+        with self.engine.begin() as conn:
+            classes = conn.execute(
+                select(events.c.resource_class, func.count().label("n"))
+                .where(events.c.agent_id == agent_id)
+                .group_by(events.c.resource_class)
+                .order_by(func.count().desc())
+            ).fetchall()
+            tools = conn.execute(
+                select(events.c.tool_server, events.c.tool_name,
+                       func.count().label("n"))
+                .where(events.c.agent_id == agent_id)
+                .group_by(events.c.tool_server, events.c.tool_name)
+                .order_by(func.count().desc()).limit(limit)
+            ).fetchall()
+            outside = conn.execute(
+                select(decisions.c.verdict, decisions.c.score,
+                       decisions.c.sentence, decisions.c.ts,
+                       events.c.resource_uri, events.c.resource_class,
+                       events.c.tool_server, events.c.tool_name)
+                .join(events, events.c.event_id == decisions.c.event_id)
+                .where(events.c.agent_id == agent_id,
+                       decisions.c.verdict != Verdict.ALLOW.value)
+                .order_by(decisions.c.ts.desc()).limit(limit)
+            ).fetchall()
+
+        total = sum(c.n for c in classes) or 1
+        return {
+            **base,
+            "classes": [{"class": c.resource_class or "unknown", "events": c.n,
+                         "pct": round(100.0 * c.n / total, 1)} for c in classes],
+            "tools": [{"tool": f"{t.tool_server}/{t.tool_name}", "events": t.n}
+                      for t in tools],
+            "outside": [{
+                "tool": f"{o.tool_server}/{o.tool_name}",
+                "resource": o.resource_uri, "class": o.resource_class,
+                "verdict": o.verdict, "score": o.score,
+                "sentence": o.sentence or "", "ts": o.ts,
+            } for o in outside],
+        }
+
+    def restrict_agent(self, agent_id: str) -> dict | None:
+        """Quarantine by hand — the mirror of `release_agent`.
+
+        The dashboard could already let a human clear a quarantine but not start
+        one, so an operator who saw something alarming had no action available
+        except editing the database.
+        """
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(agents).where(agents.c.agent_id == agent_id)).first()
+            if row is None:
+                return None
+            conn.execute(update(agents).where(agents.c.agent_id == agent_id).values(
+                quarantined=1, zone="hot",
+                trust=min(float(row.trust), 0.20),
+                trust_updated=utcnow()))
+        return self.agent(agent_id)

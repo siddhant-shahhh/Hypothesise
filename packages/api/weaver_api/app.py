@@ -106,6 +106,73 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
                 "registered": tier1_names() + tier2_names(),
                 "errors": detector_errors()}
 
+    @app.get("/v1/signals")
+    def threat_signals(limit: int = Query(50, le=500)) -> list[dict]:
+        """Corroborated suspicion per resource — the stigmergy view."""
+        return repo.threat_signals(limit=limit)
+
+    @app.get("/v1/decisions")
+    def decision_log(limit: int = Query(200, le=2000), q: str = "") -> list[dict]:
+        """Every decision, allows included. `/v1/alerts` is non-ALLOW only."""
+        return repo.decision_log(limit=limit, q=q)
+
+    @app.get("/v1/agents/{agent_id}/behavior")
+    def agent_behavior(agent_id: str) -> dict:
+        row = repo.agent_behavior(agent_id)
+        if row is None:
+            raise HTTPException(404, f"no such agent: {agent_id}")
+        return row
+
+    @app.get("/v1/policy")
+    def policy() -> dict:
+        """The policy actually in force in this process.
+
+        Per-rule config (`weaver.config.json`) is loaded by the PROXY, not here,
+        so the control plane cannot list those rules. What it can state exactly
+        is the part that is compiled in: the thresholds, and the detectors that
+        block on their own regardless of score.
+        """
+        from weaver_core.detectors.base import (
+            detector_errors,
+            tier1_names,
+            tier2_names,
+        )
+        from weaver_core.policy.score import (
+            ASK_THRESHOLD,
+            BLOCK_THRESHOLD,
+            SHORT_CIRCUIT,
+            W_EDGE,
+            W_NODE,
+            W_TIER1,
+            W_TRUST,
+        )
+        from weaver_core.trust.model import (
+            HOT_BELOW,
+            QUARANTINE_AFTER,
+            WARM_BELOW,
+        )
+
+        return {
+            "thresholds": {"ask": ASK_THRESHOLD, "block": BLOCK_THRESHOLD},
+            "trust_zones": {"warm_below": WARM_BELOW, "hot_below": HOT_BELOW,
+                            "quarantine_after": QUARANTINE_AFTER},
+            "weights": {"tier1": W_TIER1, "node": W_NODE, "edge": W_EDGE,
+                        "trust": W_TRUST},
+            "short_circuit": sorted(SHORT_CIRCUIT),
+            "detectors": {"tier1": tier1_names(), "tier2": tier2_names()},
+            "errors": detector_errors(),
+            "rules_source": "weaver.config.json, loaded by the proxy",
+        }
+
+    @app.post("/v1/agents/{agent_id}/restrict")
+    def restrict(agent_id: str) -> dict:
+        """Quarantine an agent by hand. The mirror of /release."""
+        row = repo.restrict_agent(agent_id)
+        if row is None:
+            raise HTTPException(404, f"no such agent: {agent_id}")
+        _notify(app.state.webhook, {"type": "agent_restricted", **row})
+        return row
+
     # -- approvals ----------------------------------------------------------
 
     @app.post("/v1/approvals")
@@ -282,7 +349,9 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
     def dashboard() -> HTMLResponse:
         index = STATIC / "index.html"
         if not index.exists():
-            return HTMLResponse("<h1>Weaver</h1><p>dashboard not built</p>", status_code=200)
+            return HTMLResponse(
+                "<h1>GUARDENT</h1><p>dashboard file missing from the install</p>",
+                status_code=200)
         return HTMLResponse(index.read_text())
 
     return app

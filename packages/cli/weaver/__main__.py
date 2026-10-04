@@ -28,7 +28,21 @@ def _cmd_api(args: argparse.Namespace) -> int:
 
         n = load_demo(app.state.repo, app.state.engine)
         print(f"weaver: loaded {n} demo events from the scenario suite")
+    # Say WHICH index.html is being served. A non-editable install leaves a
+    # real copy in site-packages that shadows the repo, so "I changed the
+    # dashboard and nothing changed" is a path problem with no other symptom.
+    from weaver_api.app import STATIC
+
+    index = STATIC / "index.html"
     print(f"weaver: dashboard on http://{args.host}:{args.port}")
+    if index.exists():
+        from datetime import datetime, timezone
+
+        when = datetime.fromtimestamp(
+            index.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+        print(f"weaver: serving {index}  (modified {when} UTC)")
+    else:
+        print(f"weaver: no dashboard file at {index}", file=sys.stderr)
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
