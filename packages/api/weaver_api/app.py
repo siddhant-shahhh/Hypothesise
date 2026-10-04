@@ -352,7 +352,7 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
             return HTMLResponse(
                 "<h1>GUARDENT</h1><p>dashboard file missing from the install</p>",
                 status_code=200)
-        return HTMLResponse(index.read_text())
+        return HTMLResponse(index.read_text(encoding="utf-8"))
 
     return app
 
