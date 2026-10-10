@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 for pkg in ("core", "store", "proxy"):
     sys.path.insert(0, str(ROOT / "packages" / pkg))
 
-from weaver_core.events import (  # noqa: E402
+from hypothesise_core.events import (  # noqa: E402
     Decision,
     Event,
     Resource,
@@ -34,14 +34,14 @@ from weaver_core.events import (  # noqa: E402
     Tool,
     Verdict,
 )
-from weaver_core.graph.model import GraphSnapshot  # noqa: E402
-from weaver_proxy import protocol as p  # noqa: E402
-from weaver_proxy.config import ProxyConfig  # noqa: E402
-from weaver_proxy.emit import EventEmitter  # noqa: E402
-from weaver_proxy.gate import Gate, GateConfig  # noqa: E402
-from weaver_proxy.server import WeaverProxy  # noqa: E402
-from weaver_proxy.shipper import Shipper  # noqa: E402
-from weaver_proxy.upstream import UpstreamConfig  # noqa: E402
+from hypothesise_core.graph.model import GraphSnapshot  # noqa: E402
+from hypothesise_proxy import protocol as p  # noqa: E402
+from hypothesise_proxy.config import ProxyConfig  # noqa: E402
+from hypothesise_proxy.emit import EventEmitter  # noqa: E402
+from hypothesise_proxy.gate import Gate, GateConfig  # noqa: E402
+from hypothesise_proxy.server import HypothesiseProxy  # noqa: E402
+from hypothesise_proxy.shipper import Shipper  # noqa: E402
+from hypothesise_proxy.upstream import UpstreamConfig  # noqa: E402
 
 RESET, BOLD, DIM = "\033[0m", "\033[1m", "\033[2m"
 RED, GREEN, YELLOW = "\033[31m", "\033[32m", "\033[33m"
@@ -114,7 +114,7 @@ async def drill_dead_control_plane_drops() -> tuple[bool, str]:
 
 
 async def drill_crashing_detector_is_contained() -> tuple[bool, str]:
-    from weaver_core.detectors.base import (
+    from hypothesise_core.detectors.base import (
         _TIER1,
         DetectorContext,
         SessionWindow,
@@ -129,7 +129,7 @@ async def drill_crashing_detector_is_contained() -> tuple[bool, str]:
     reset_detector_errors()
     _TIER1.append(("drill_explode", explode))
     try:
-        from weaver_core.baseline.model import Baseline
+        from hypothesise_core.baseline.model import Baseline
 
         w = SessionWindow()
         ev = _ev()
@@ -164,7 +164,7 @@ async def drill_dead_upstream_survives() -> tuple[bool, str]:
         ],
         gate=GateConfig(mode="observe"),
     )
-    proxy = WeaverProxy(cfg)
+    proxy = HypothesiseProxy(cfg)
     try:
         await proxy.start_upstreams()
         await proxy.handle(p.request(1, "initialize", {

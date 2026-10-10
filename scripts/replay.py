@@ -20,12 +20,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "packages" / "core"))
 sys.path.insert(0, str(ROOT / "packages" / "store"))
 
-from weaver_core.detectors.base import detector_errors
-from weaver_core.engine import Engine
-from weaver_core.events import Verdict
-from weaver_core.policy.score import severity
-from weaver_core.scenario import Scenario, load_all, load_scenario
-from weaver_core.trust.model import TrustStore
+from hypothesise_core.detectors.base import detector_errors
+from hypothesise_core.engine import Engine
+from hypothesise_core.events import Verdict
+from hypothesise_core.policy.score import severity
+from hypothesise_core.scenario import Scenario, load_all, load_scenario
+from hypothesise_core.trust.model import TrustStore
 
 RESET, BOLD, DIM = "\033[0m", "\033[1m", "\033[2m"
 RED, YELLOW, GREEN, CYAN, MAGENTA = (
@@ -91,7 +91,7 @@ def replay(eng: Engine, sc: Scenario, verbose: bool = True) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Replay Weaver scenarios.")
+    ap = argparse.ArgumentParser(description="Replay Hypothesise scenarios.")
     ap.add_argument("scenario", nargs="?")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--quiet", action="store_true")

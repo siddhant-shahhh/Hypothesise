@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from weaver_api.app import create_app
-from weaver_api.demo import load_demo
-from weaver_core.events import Event, Resource, ResourceClass, Tool
+from hypothesise_api.app import create_app
+from hypothesise_api.demo import load_demo
+from hypothesise_core.events import Event, Resource, ResourceClass, Tool
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def test_dashboard_serves_html(client):
     c, _ = client
     r = c.get("/")
     assert r.status_code == 200
-    assert "GUARDENT" in r.text
+    assert "Hypothesise" in r.text
     assert "cytoscape" in r.text.lower()
 
 
@@ -168,7 +168,7 @@ def test_readyz_reports_schema_state(client):
 
 def test_metrics_is_prometheus_text(client):
     c, app = client
-    from weaver_api.demo import load_demo
+    from hypothesise_api.demo import load_demo
 
     load_demo(app.state.repo, app.state.engine)
     r = c.get("/metrics")
@@ -176,9 +176,9 @@ def test_metrics_is_prometheus_text(client):
     assert r.headers["content-type"].startswith("text/plain")
 
     body = r.text
-    for metric in ("weaver_events_total", "weaver_decisions_total",
-                   "weaver_agents", "weaver_approvals_pending",
-                   "weaver_detector_errors_total"):
+    for metric in ("hypothesise_events_total", "hypothesise_decisions_total",
+                   "hypothesise_agents", "hypothesise_approvals_pending",
+                   "hypothesise_detector_errors_total"):
         assert metric in body
     # every metric carries HELP and TYPE, or scrapers complain
     assert body.count("# HELP") >= 6
@@ -198,7 +198,7 @@ def test_stats_reports_decision_latency(client):
     """Latency is what the agent feels. Past the gate's budget it fails open and
     detection stops silently, so this has to be visible."""
     c, app = client
-    from weaver_api.demo import load_demo
+    from hypothesise_api.demo import load_demo
 
     load_demo(app.state.repo, app.state.engine)
     lat = c.get("/v1/stats").json()["latency_ms"]
@@ -209,13 +209,13 @@ def test_stats_reports_decision_latency(client):
 
 def test_metrics_exposes_latency_and_fail_open(client):
     c, app = client
-    from weaver_api.demo import load_demo
+    from hypothesise_api.demo import load_demo
 
     load_demo(app.state.repo, app.state.engine)
     body = c.get("/metrics").text
-    for metric in ("weaver_decision_latency_ms",
-                   "weaver_decisions_near_budget_total",
-                   "weaver_decisions_failed_open_total"):
+    for metric in ("hypothesise_decision_latency_ms",
+                   "hypothesise_decisions_near_budget_total",
+                   "hypothesise_decisions_failed_open_total"):
         assert metric in body
 
 
@@ -223,11 +223,11 @@ def test_metrics_exposes_latency_and_fail_open(client):
 # The dashboard shipped with only the approvals badge on a timer, so a session
 # timeline left open while an agent worked never updated. Events were recorded
 # correctly and the screen showed nothing — indistinguishable, to the person
-# watching, from Weaver not working at all.
+# watching, from Hypothesise not working at all.
 
 STATIC = (
     Path(__file__).resolve().parents[1]
-    / "packages" / "api" / "weaver_api" / "static" / "index.html"
+    / "packages" / "api" / "hypothesise_api" / "static" / "index.html"
 )
 
 
@@ -251,6 +251,25 @@ def test_live_refresh_skips_the_views_it_would_break():
     body = html.split("async function liveRefresh(){", 1)[1].split("setInterval", 1)[0]
     assert "'approvals'" in body
     assert "'graph'" in body
+
+
+def test_an_open_timeline_keeps_refreshing():
+    """Watching a live agent means watching its timeline. Skipping refresh
+    while one is open showed a frozen trace that looked like missed events."""
+    html = STATIC.read_text()
+    body = html.split("async function liveRefresh(){", 1)[1].split("setInterval", 1)[0]
+    assert "session)" not in body
+    assert "if (session) return timeline();" in html
+
+
+def test_dashboard_never_shows_sample_data_unless_asked():
+    """The redesign carries sample data for design review. Served to a real
+    user when the API is down, it would show invented alerts on a broken
+    install — the worst thing a security dashboard can do."""
+    html = STATIC.read_text()
+    body = html.split("async function api(path) {", 1)[1].split("\n}\n", 1)[0]
+    assert "if (DEMO) return resolveMock(path);" in body
+    assert "has('demo')" in html
 
 
 def test_live_refresh_stops_when_the_tab_is_hidden():

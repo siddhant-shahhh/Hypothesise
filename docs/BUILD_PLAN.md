@@ -1,4 +1,4 @@
-# Build Plan — Agent Immune System (Weaver)
+# Build Plan — Agent Immune System (Hypothesise)
 
 Solo, full-time. **90 working days of build, 22 weeks calendar** (the gap is client
 review cycles, scope changes, and detection tuning, which always overruns).
@@ -31,9 +31,9 @@ LangGraph adapter, more than 3 bundled MCP integrations.
 thing that measures success exists before the thing being measured.
 
 - [ ] `uv` workspace across `packages/*`; ruff + mypy + pytest wired
-- [ ] Define the **event schema** as a Pydantic model in `weaver_core` — this is
+- [ ] Define the **event schema** as a Pydantic model in `hypothesise_core` — this is
       the contract every other package depends on. Freeze it early.
-- [ ] `weaver_store`: SQLAlchemy Core models for `nodes`, `edges`, `paths`,
+- [ ] `hypothesise_store`: SQLAlchemy Core models for `nodes`, `edges`, `paths`,
       `events`, `decisions`, `signals`, `approvals`. Migration runner.
       **`tenant_id` on every table from day one.**
 - [ ] Resource classifier v0 — rules only. URI pattern → class. ~60 lines.
@@ -54,7 +54,7 @@ demo and the first payment gate.
 
 ### Days 6–12 — the MCP proxy
 
-- [ ] `weaver_proxy`: stdio MCP server that forwards to configured upstream servers
+- [ ] `hypothesise_proxy`: stdio MCP server that forwards to configured upstream servers
 - [ ] Tool aggregation — present the union of upstream tools to the client
 - [ ] Session and agent identity from the MCP `initialize` handshake
 - [ ] Event emission onto a **bounded, non-blocking** queue (drop + count on full)
@@ -67,9 +67,9 @@ demo and the first payment gate.
 
 ### Days 13–16 — ingest and graph build
 
-- [ ] `weaver_api`: FastAPI, `POST /v1/events` (batch), API-key auth
+- [ ] `hypothesise_api`: FastAPI, `POST /v1/events` (batch), API-key auth
 - [ ] Ingest worker: event → upsert nodes, upsert edges, extract n-grams → `paths`
-- [ ] Lazy decay on read, implemented once, in `weaver_core/risk`
+- [ ] Lazy decay on read, implemented once, in `hypothesise_core/risk`
 - [ ] `GET /v1/graph`, `GET /v1/sessions`, `GET /v1/events` with filters
 
 ### Days 17–20 — dashboard v1
@@ -138,7 +138,7 @@ Tier 1 runs **inline** in the proxy against the session ring buffer + graph snap
 customer, so it is the most conservative phase in the plan.
 
 - [ ] Verdict enforcement in the proxy: ALLOW / ASK / BLOCK
-- [ ] **`WEAVER_MODE=observe` remains the default.** Enforce is opt-in, per agent,
+- [ ] **`HYPOTHESISE_MODE=observe` remains the default.** Enforce is opt-in, per agent,
       and the dashboard shows a banner while it is on.
 - [ ] Blocked-call response: a structured MCP error the agent can reason about —
       it should be able to tell its operator *why*, not just fail
@@ -187,11 +187,11 @@ customer, so it is the most conservative phase in the plan.
 **Goal:** a real team can install, run and trust it. This phase is unglamorous and
 it is the phase that separates "demo" from "product". Do not compress it.
 
-- [x] **Packaging: one-command install** — single distribution, one `weaver`
-      CLI. **Name still needed**: `weaver` is taken on PyPI (ADR-030)
+- [x] **Packaging: one-command install** — single distribution, one `hypothesise`
+      CLI, named `hypothesise` (ADR-034); `uv tool install` / `pipx install`
       — ADR-009 makes this the single most important item in M5
 - [ ] Zero-config defaults: works with no `.env`, sensible fallbacks everywhere
-- [ ] `weaver --help` that explains the product, not just the flags
+- [ ] `hypothesise --help` that explains the product, not just the flags
 - [ ] Local dashboard on 127.0.0.1, no accounts (ADR-009 supersedes auth/roles)
 - [ ] Secrets handling: arg redaction rules, retention policy, purge job
 - [ ] Audit log — immutable, covers every decision and every config change
@@ -203,7 +203,7 @@ it is the phase that separates "demo" from "product". Do not compress it.
 - [ ] Backup/restore runbook
 - [ ] Docs: install guide, integration guide, detector reference, tuning guide,
       "what to do when it blocks something it shouldn't"
-- [ ] Test coverage ≥ 70% on `weaver_core`
+- [ ] Test coverage ≥ 70% on `hypothesise_core`
 
 **Exit criteria:**
 - Fresh machine → working install in under 30 minutes following the written guide
@@ -226,7 +226,7 @@ Not padding. This is where the real cost lands:
 
 1. **Scenarios before detectors, always.** Write the YAML that should fire, watch
    it not fire, then build the detector. Anything else is guessing.
-2. **`weaver_core` imports nothing.** No FastAPI, no SQLAlchemy, no MCP. If a
+2. **`hypothesise_core` imports nothing.** No FastAPI, no SQLAlchemy, no MCP. If a
    detector needs data, it arrives as an argument.
 3. **Never let the proxy block on the engine.** Every path through the data plane
    has a timeout and a fail-open fallback. Test this before you need it.
@@ -244,4 +244,4 @@ Not padding. This is where the real cost lands:
 | False positives on real traffic | One bad block and the product is uninstalled | Shadow mode mandatory; observe-mode default; numeric exit criteria |
 | Detection tuning overruns | The classic solo-dev schedule killer | Scenario suite from day 5; milestone-based billing past M2, not fixed-price |
 | Scope creep into "collective intelligence" | It is a research project, not a deliverable | Explicitly out of scope in the contract; schema supports it, v1 does not ship it |
-| Ownership undecided | Could hand over the moat by accident | `weaver_core` stays dependency-free and separable; settle IP before M1 payment |
+| Ownership undecided | Could hand over the moat by accident | `hypothesise_core` stays dependency-free and separable; settle IP before M1 payment |

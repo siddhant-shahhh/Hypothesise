@@ -1,6 +1,6 @@
 """Wire protocol tests. Framing bugs here corrupt every conversation."""
 
-from weaver_proxy import protocol as p
+from hypothesise_proxy import protocol as p
 
 
 def test_request_vs_notification():
@@ -36,7 +36,7 @@ def test_decode_handles_bad_utf8():
 
 
 def test_block_code_outside_reserved_range():
-    """Clients must be able to tell a Weaver decision from a transport fault."""
+    """Clients must be able to tell a Hypothesise decision from a transport fault."""
     assert not (-32768 <= p.BLOCKED_BY_POLICY <= -32000)
 
 

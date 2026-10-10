@@ -6,8 +6,8 @@ otherwise a detector gets tuned against a broken target.
 
 from pathlib import Path
 
-from weaver_core.events import Action, ResourceClass, Status
-from weaver_core.scenario import load_all, load_scenario
+from hypothesise_core.events import Action, ResourceClass, Status
+from hypothesise_core.scenario import load_all, load_scenario
 
 ROOT = Path(__file__).resolve().parent.parent
 

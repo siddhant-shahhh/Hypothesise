@@ -29,7 +29,7 @@ FILES: dict[str, str] = {
     "src/utils.py": "def slugify(s):\n    return s.lower().replace(' ', '-')\n",
     "config/app.yaml": "service: demo\nport: 8080\nlog_level: info\n",
     "config/logging.yaml": "version: 1\nroot:\n  level: INFO\n",
-    "README.md": "# Sandbox\n\nDisposable fixture for the Weaver red-team suite.\n",
+    "README.md": "# Sandbox\n\nDisposable fixture for the Hypothesise red-team suite.\n",
     "requirements.txt": "flask==3.0.0\n",
     ".ssh/id_rsa": (
         "-----BEGIN FAKE KEY-----\n"
@@ -59,7 +59,7 @@ class Sandbox:
 
 
 def build() -> Sandbox:
-    root = Path(tempfile.mkdtemp(prefix="weaver-redteam-"))
+    root = Path(tempfile.mkdtemp(prefix="hypothesise-redteam-"))
     for rel, body in FILES.items():
         target = root / rel
         target.parent.mkdir(parents=True, exist_ok=True)

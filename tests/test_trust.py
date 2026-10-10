@@ -1,9 +1,9 @@
 """Trust machine tests — asymmetry, zones, quarantine, persistence."""
 
 import pytest
-from weaver_core.events import Event, Resource, ResourceClass, Tool, Verdict
-from weaver_core.risk.model import Weight
-from weaver_core.trust.model import (
+from hypothesise_core.events import Event, Resource, ResourceClass, Tool, Verdict
+from hypothesise_core.risk.model import Weight
+from hypothesise_core.trust.model import (
     HOT_BELOW,
     QUARANTINE_AFTER,
     WARM_BELOW,
@@ -170,7 +170,7 @@ def test_store_ignores_rows_without_an_agent_id():
 def test_trust_carries_across_a_session():
     """The behaviour the suites deliberately reset: within one real session,
     damage accumulates and later actions are gated because of earlier ones."""
-    from weaver_core.engine import Engine
+    from hypothesise_core.engine import Engine
 
     eng = Engine()
     agent = "coding-agent-prod"

@@ -21,7 +21,7 @@ echo "    PASS  rebuilt .venv"
 step "correctness"
 check python -m pytest -q
 check python -m ruff check packages scripts tests redteam
-check python -m mypy packages/core/weaver_core
+check python -m mypy packages/core/hypothesise_core
 
 step "detection quality"
 check python scripts/replay.py --all --quiet    # >=80% detection, <=5% false positives
@@ -42,8 +42,8 @@ w = sorted(glob.glob("dist/*.whl"))
 if not w:
     print("    FAIL  no wheel"); sys.exit(1)
 names = zipfile.ZipFile(w[-1]).namelist()
-want = {"weaver", "weaver_core", "weaver_store", "weaver_proxy",
-        "weaver_api", "weaver_langgraph"}
+want = {"hypothesise", "hypothesise_core", "hypothesise_store", "hypothesise_proxy",
+        "hypothesise_api", "hypothesise_langgraph"}
 missing = want - {n.split("/")[0] for n in names if "/" in n}
 if missing:
     print("    FAIL  missing from wheel: %s" % sorted(missing)); sys.exit(1)
@@ -60,9 +60,9 @@ step "a stranger's install actually works"
 TMP="$(mktemp -d)"
 if python -m venv "$TMP/v" >/dev/null 2>&1 \
    && "$TMP/v/bin/pip" install -q "$(ls dist/*.whl | head -1)" >/dev/null 2>&1; then
-  check "$TMP/v/bin/weaver" version
-  check "$TMP/v/bin/weaver" migrate --db "sqlite:///$TMP/x.db"
-  check "$TMP/v/bin/weaver" --help
+  check "$TMP/v/bin/hypothesise" version
+  check "$TMP/v/bin/hypothesise" migrate --db "sqlite:///$TMP/x.db"
+  check "$TMP/v/bin/hypothesise" --help
 else
   echo "    FAIL  could not install the wheel into a clean venv"; FAIL=1
 fi

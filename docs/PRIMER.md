@@ -1,4 +1,4 @@
-# Weaver in ten minutes
+# Hypothesise in ten minutes
 
 Read this first. It's the whole project — what it does, why it's built this
 way, and what's actually true versus still aspirational.
@@ -14,7 +14,7 @@ That question is necessary and insufficient. An agent that is *allowed* to read
 `.env` and *allowed* to make HTTP requests can do both in sequence and
 exfiltrate your credentials, and every permission check passes.
 
-Weaver asks a different question:
+Hypothesise asks a different question:
 
 > **Is the way this agent is behaving normal for this agent?**
 
@@ -22,7 +22,7 @@ It sits between the agent and its tools, learns what that agent normally does,
 and scores each call against that history.
 
 ```
-agent ──> [ Weaver ] ──> github-mcp / postgres-mcp / shell-mcp / ...
+agent ──> [ Hypothesise ] ──> github-mcp / postgres-mcp / shell-mcp / ...
                │
                └──> observe · learn · score · allow / ask / block
 ```
@@ -31,7 +31,7 @@ agent ──> [ Weaver ] ──> github-mcp / postgres-mcp / shell-mcp / ...
 
 ## The one idea that makes it different
 
-Most agent-security products score the **agent**. Weaver scores the **graph**.
+Most agent-security products score the **agent**. Hypothesise scores the **graph**.
 
 Risk is a property of nodes and edges — tools, resources, and the connections
 between them — not a column on an agents table:
@@ -153,7 +153,7 @@ secures nothing. Four rules, all enforced in code and pinned by tests:
 ## Layout
 
 ```
-packages/core/weaver_core/     THE ENGINE — zero I/O, zero framework deps
+packages/core/hypothesise_core/     THE ENGINE — zero I/O, zero framework deps
   events.py                    the schema everything depends on
   classify.py                  URI -> resource class
   graph/model.py               nodes, edges, risk floors, decay rates
@@ -169,7 +169,7 @@ packages/api/                  FastAPI + the dashboard (single HTML file)
 scenarios/                     attack/ must fire · benign/ must not
 ```
 
-`weaver_core` imports nothing. Partly for testability, partly because project
+`hypothesise_core` imports nothing. Partly for testability, partly because project
 ownership is still open — a core that imports nothing is a core that can be
 carved out.
 
@@ -180,10 +180,10 @@ carved out.
 ```bash
 bash scripts/dev-setup.sh        # creates .venv (PEP 668 makes this mandatory)
 source .venv/bin/activate
-weaver api --demo                # then open http://127.0.0.1:8080
+hypothesise api --demo                # then open http://127.0.0.1:8080
 pytest                                   # 135 tests
 python3 scripts/replay.py --all          # the eval suite
-python3 -m weaver_api --demo             # dashboard on :8080
+python3 -m hypothesise_api --demo             # dashboard on :8080
 ```
 
 `docs/COMMANDS.md` has everything else.
@@ -230,8 +230,8 @@ files, load test, failure drills, release gate.
 | No real agent traffic has ever been observed — **the big one** | ADR-010 |
 | No authentication on the API (local-first by design) | ADR-009 |
 | Postgres written but never run against a real server | ADR-028 |
-| The wheel has never been built here — `release-check.sh` verifies it | ADR-027 |
-| **The name `weaver` is taken on PyPI** — nothing can be published under it | ADR-030 |
+| Nothing published yet; license unset until ownership closes | ADR-034, ADR-007 |
+| Cross-server chains are caught in the dashboard, not blocked live | ADR-036 |
 | LangGraph adapter is advisory, cannot block | ADR-025 |
 | 3 open red-team gaps: DNS exfil, destructive shell, config tamper | `redteam/README.md` |
 
@@ -243,7 +243,7 @@ fire at all. There is no real agent
 traffic yet (ADR-010). Read it as *"the detectors do what they were designed to
 do"*, not *"detection works"*.
 
-The cheapest fix is to put Weaver in front of your own Claude Code or Cursor
+The cheapest fix is to put Hypothesise in front of your own Claude Code or Cursor
 session today — section 6 of `COMMANDS.md`. Real traffic, available now,
 costs nothing.
 
@@ -253,7 +253,7 @@ costs nothing.
 
 | Question | File |
 |---|---|
-| Everything in one place, for a new teammate | `docs/GUARDENT.md` |
+| Everything in one place, for a new teammate | `docs/HYPOTHESISE.md` |
 | How do I run it? | `docs/COMMANDS.md` |
 | How does it work in detail? | `docs/ARCHITECTURE.md` |
 | Why is it built this way? | `docs/DECISIONS.md` |

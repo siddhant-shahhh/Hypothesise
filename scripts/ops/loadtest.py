@@ -26,12 +26,12 @@ ROOT = Path(__file__).resolve().parents[2]
 for pkg in ("core", "store", "proxy"):
     sys.path.insert(0, str(ROOT / "packages" / pkg))
 
-from weaver_core.classify import classify_action, classify_resource  # noqa: E402
-from weaver_core.engine import Engine  # noqa: E402
-from weaver_core.events import Event, Resource, Tool  # noqa: E402
-from weaver_core.scenario import load_all  # noqa: E402
-from weaver_proxy.emit import EventEmitter  # noqa: E402
-from weaver_proxy.gate import Gate, GateConfig  # noqa: E402
+from hypothesise_core.classify import classify_action, classify_resource  # noqa: E402
+from hypothesise_core.engine import Engine  # noqa: E402
+from hypothesise_core.events import Event, Resource, Tool  # noqa: E402
+from hypothesise_core.scenario import load_all  # noqa: E402
+from hypothesise_proxy.emit import EventEmitter  # noqa: E402
+from hypothesise_proxy.gate import Gate, GateConfig  # noqa: E402
 
 TOOLS = [("github-mcp", "get_file_contents"), ("fs-mcp", "read_file"),
          ("fs-mcp", "write_file"), ("shell-mcp", "exec"),
@@ -60,7 +60,7 @@ async def run(n: int, budget_ms: int) -> dict:
                 engine.train(sc.events)
                 engine.reset_sessions()
 
-    from weaver_proxy.evaluator import engine_evaluator
+    from hypothesise_proxy.evaluator import engine_evaluator
 
     gate = Gate(config=GateConfig(mode="observe", fail_mode="open",
                                   budget_ms=budget_ms),
@@ -105,7 +105,7 @@ async def run(n: int, budget_ms: int) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Load test the Weaver decision path")
+    ap = argparse.ArgumentParser(description="Load test the Hypothesise decision path")
     ap.add_argument("--n", type=int, default=10_000)
     ap.add_argument("--budget-ms", type=int, default=50)
     ap.add_argument("--json", action="store_true")

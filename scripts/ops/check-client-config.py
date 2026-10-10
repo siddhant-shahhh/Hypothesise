@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Validate (and optionally fix) an MCP client config that points at Weaver.
+"""Validate (and optionally fix) an MCP client config that points at Hypothesise.
 
     python3 scripts/ops/check-client-config.py ~/proj/.vscode/mcp.json
     python3 scripts/ops/check-client-config.py ~/proj/.vscode/mcp.json --fix
 
-Run it with the interpreter you actually installed Weaver into. That is the
+Run it with the interpreter you actually installed Hypothesise into. That is the
 whole point: the config names an absolute path to an executable, the client
 launches it with none of your shell's environment, and if that path is wrong
 the client reports "server exited" and nothing else. Every install failure in
@@ -12,11 +12,11 @@ this project so far has been an interpreter-identity problem (ADR-014,
 ADR-031, ADR-032), and this is the one place a wrong interpreter is invisible
 until an agent session fails.
 
-`--fix` rewrites each Weaver server entry to `sys.executable -m weaver`, which
+`--fix` rewrites each Hypothesise server entry to `sys.executable -m hypothesise`, which
 is correct by construction: the interpreter running this script is the one that
-can import weaver, and `-m` needs no console-script shim on PATH.
+can import hypothesise, and `-m` needs no console-script shim on PATH.
 
-Imports nothing from weaver — it has to work when weaver is the broken thing.
+Imports nothing from hypothesise — it has to work when hypothesise is the broken thing.
 """
 
 from __future__ import annotations
@@ -66,11 +66,11 @@ def servers_of(doc: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def is_weaver_entry(name: str, entry: dict[str, Any]) -> bool:
-    if "weaver" in name.lower():
+def is_hypothesise_entry(name: str, entry: dict[str, Any]) -> bool:
+    if "hypothesise" in name.lower():
         return True
     blob = " ".join([str(entry.get("command", "")), *map(str, entry.get("args", []))])
-    return "weaver" in blob.lower()
+    return "hypothesise" in blob.lower()
 
 
 def shebang_of(path: Path) -> str | None:
@@ -169,7 +169,7 @@ def check_command(rep: Report, entry: dict[str, Any]) -> Path | None:
                        "interpreter running this check")
         rep.note(f"config  {theirs}")
         rep.note(f"me      {mine}")
-        rep.note("Not wrong by itself, but only one of them has weaver installed.")
+        rep.note("Not wrong by itself, but only one of them has hypothesise installed.")
 
     return cmd
 
@@ -234,20 +234,20 @@ def check_api_arg(rep: Report, args: list[str]) -> None:
             pass
     except OSError:
         rep.line(WARN, f"nothing listening on {host}:{port} right now")
-        rep.note("Start it with `weaver api` before the agent session.")
+        rep.note("Start it with `hypothesise api` before the agent session.")
         return
     rep.line(OK, f"control plane answers on {host}:{port}")
 
 
 def fixed_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """Rewrite to `<this interpreter> -m weaver ...`, dropping any existing
-    `-m weaver` prefix so --fix is idempotent."""
+    """Rewrite to `<this interpreter> -m hypothesise ...`, dropping any existing
+    `-m hypothesise` prefix so --fix is idempotent."""
     args = [str(a) for a in entry.get("args", [])]
-    if args[:2] == ["-m", "weaver"]:
+    if args[:2] == ["-m", "hypothesise"]:
         args = args[2:]
     new = dict(entry)
     new["command"] = sys.executable
-    new["args"] = ["-m", "weaver", *args]
+    new["args"] = ["-m", "hypothesise", *args]
     return new
 
 
@@ -255,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__ and __doc__.splitlines()[0])
     ap.add_argument("path", help="mcp.json / .cursor/mcp.json / ~/.claude.json")
     ap.add_argument("--fix", action="store_true",
-                    help="rewrite weaver entries to use this interpreter")
+                    help="rewrite hypothesise entries to use this interpreter")
     args = ap.parse_args(argv)
 
     path = Path(os.path.expanduser(args.path))
@@ -285,9 +285,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     targets = {n: e for n, e in block.items()
-               if isinstance(e, dict) and is_weaver_entry(n, e)}
+               if isinstance(e, dict) and is_hypothesise_entry(n, e)}
     if not targets:
-        print(f"\n  FAIL    none of {sorted(block)} looks like a weaver entry")
+        print(f"\n  FAIL    none of {sorted(block)} looks like a hypothesise entry")
         return 1
 
     rep = Report()
@@ -305,14 +305,14 @@ def main(argv: list[str] | None = None) -> int:
             block[name] = fixed_entry(block[name])
         path.write_text(json.dumps(doc, indent=2) + "\n")
         print(f"\n  rewrote {len(targets)} entr{'y' if len(targets) == 1 else 'ies'} "
-              f"to use {sys.executable} -m weaver")
+              f"to use {sys.executable} -m hypothesise")
         print("  Reload the client window, then run this again without --fix.")
         return 0
 
     print("\n" + "=" * 70)
     if rep.failed:
         print("Not usable as written. Fix the FAIL lines, or run again with")
-        print("--fix using the interpreter that has weaver installed:\n")
+        print("--fix using the interpreter that has hypothesise installed:\n")
         print(f"    {sys.executable} {Path(__file__).name} {path} --fix")
         print("=" * 70)
         return 1

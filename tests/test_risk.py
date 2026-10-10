@@ -7,9 +7,9 @@ and never below it, distinct-reporter corroboration, and asymmetric trust.
 import math
 
 import pytest
-from weaver_core.events import ResourceClass
-from weaver_core.graph.model import floor_for, lambda_for
-from weaver_core.risk.model import (
+from hypothesise_core.events import ResourceClass
+from hypothesise_core.graph.model import floor_for, lambda_for
+from hypothesise_core.risk.model import (
     Weight,
     confidence_from_observations,
     corroborate,

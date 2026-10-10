@@ -1,9 +1,9 @@
 """Scoring and explanation tests."""
 
 import pytest
-from weaver_core.events import Verdict
-from weaver_core.graph.model import GraphSnapshot
-from weaver_core.policy.score import (
+from hypothesise_core.events import Verdict
+from hypothesise_core.graph.model import GraphSnapshot
+from hypothesise_core.policy.score import (
     ASK_THRESHOLD,
     BLOCK_THRESHOLD,
     ScoreInput,
@@ -12,7 +12,7 @@ from weaver_core.policy.score import (
     explain,
     severity,
 )
-from weaver_core.risk.model import Signal, Weight
+from hypothesise_core.risk.model import Signal, Weight
 
 
 def sig(name: str, w: float) -> Signal:

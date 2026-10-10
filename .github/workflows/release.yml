@@ -1,0 +1,54 @@
+# Publishes to PyPI when a version tag (v*) is pushed. Token-free: PyPI trusts
+# this workflow via Trusted Publishing (docs/DEPLOY-PYPI.md step 6). The
+# `pypi` environment requires an owner's approval before anything uploads.
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Tag must match the package version
+        run: |
+          v=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != version $v"; exit 1; }
+      - run: uv build
+      - run: uvx twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with: { name: dist, path: dist/ }
+
+  smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist/ }
+      - uses: astral-sh/setup-uv@v6
+        with: { python-version: "${{ matrix.python }}" }
+      - shell: bash
+        run: |
+          uv tool install dist/*.whl
+          hypothesise version
+          hypothesise --help
+          hypothesise init --dry-run || true
+          hypothesise migrate --db "sqlite:///$RUNNER_TEMP/x.db"
+
+  publish:
+    needs: smoke
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist/ }
+      - uses: pypa/gh-action-pypi-publish@release/v1

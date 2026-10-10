@@ -1,8 +1,8 @@
 """Schema tests — ADR-002 constraints are load-bearing, so they get pinned."""
 
+from hypothesise_store.db import get_engine, init_db
+from hypothesise_store.schema import ALL_TABLES, agents, nodes
 from sqlalchemy import insert, inspect, select
-from weaver_store.db import get_engine, init_db
-from weaver_store.schema import ALL_TABLES, agents, nodes
 
 
 def test_schema_creates():
@@ -32,7 +32,7 @@ def test_agents_table_has_no_risk_column():
 
 
 def test_nodes_and_edges_carry_risk():
-    from weaver_store.schema import edges
+    from hypothesise_store.schema import edges
 
     for t in (nodes, edges):
         assert "risk" in t.c

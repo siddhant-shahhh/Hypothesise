@@ -1,4 +1,4 @@
-# Weaver — notes for Claude Code
+# Hypothesise — notes for Claude Code
 
 Behavioural security layer for AI agents. Intercepts tool calls at the MCP
 layer, learns what each agent normally does, scores deviations, and can block.
@@ -25,7 +25,7 @@ python scripts/replay.py --all --quiet  # scenarios, exit 0 = criteria met
 python redteam/run.py                   # red team, exit 0 = nothing got through
 python scripts/ops/drills.py            # every safety guarantee still holds
 ruff check packages scripts tests redteam
-mypy packages/core/weaver_core
+mypy packages/core/hypothesise_core
 ```
 
 Before any release: `bash scripts/ops/release-check.sh` — rebuilds .venv from
@@ -37,7 +37,7 @@ scratch, which is how both undeclared dependencies were caught.
 `test_agents_table_has_no_risk_column` fails if anyone adds `agents.risk_score`.
 That column would quietly kill resource reputation; undoing it is ~30 days.
 
-**`weaver_core` imports nothing** (ADR-005) — no FastAPI, no SQLAlchemy, no MCP.
+**`hypothesise_core` imports nothing** (ADR-005) — no FastAPI, no SQLAlchemy, no MCP.
 Detectors are pure functions. Partly testability, partly that project ownership
 is still open and a dependency-free core stays separable.
 
@@ -61,7 +61,7 @@ uninstall.
 ## Where things are
 
 ```
-packages/core/weaver_core/   the engine — events, classify, graph, risk,
+packages/core/hypothesise_core/   the engine — events, classify, graph, risk,
                              baseline, detectors, policy, engine.py
 packages/store/              SQLite now, Postgres-portable (ADR-002)
 packages/proxy/              MCP interception — the data plane
@@ -72,20 +72,30 @@ redteam/                     real proxy, real MCP subprocesses, fake secrets
 
 ## Status
 
-M0–M5 built. One installable distribution, one CLI: `weaver api`, `proxy`,
-`doctor`, `migrate`, `version`. See `docs/OPERATIONS.md`.
+M0–M5 built. One installable distribution, one CLI: `hypothesise init`,
+`status`, `uninstall`, `api`, `proxy`, `wrap`, `hook`, `doctor`, `migrate`,
+`version`. See `docs/OPERATIONS.md`.
 
-**Nothing is published, and `weaver` is taken on PyPI** (ADR-030). Never write
-`pip install weaver` in docs or tell anyone to run it — it installs an
-unrelated package. Install with `bash scripts/dev-setup.sh`.
+**Renamed from Weaver to Hypothesise** (ADR-034). Users install it as a tool —
+`uv tool install hypothesise` / `pipx install hypothesise` — then run
+`hypothesise init`, which wraps MCP servers in place for Claude Desktop, Cursor
+and VS Code and adds a hook for Claude Code (ADR-036). With no dashboard
+running, events spool to `~/.hypothesise/spool/` (ADR-035).
+
+**Nothing is published yet** — never upload to PyPI until Pratham says so, and
+the license stays `UNLICENSED` until Siddhant sets it (ADR-039).
+Release steps: `docs/DEPLOY-PYPI.md`. For development, install
+with `bash scripts/dev-setup.sh`.
 
 **Migrations are append-only** — never edit a shipped one, and every step must
 be safe to re-run. `create_all` does not add columns to existing tables, which
 is the bug ADR-026 exists for.
 
 **The real gap is data, not features.** Everything so far runs against fixtures
-and hand-written YAML. No real agent has ever connected — there is no
-`weaver.config.json`, only the example pointing at a test stub.
+and hand-written YAML. No real agent has produced a false-positive
+number yet — `hypothesise.config.json` points at `uris` for the dogfood run
+(`docs/TEST-URIS.md`), and `hypothesise init` now makes connecting a real app
+a one-command step.
 
 Both serious bugs found so far came from running the real thing:
 
@@ -99,12 +109,12 @@ tool call. Prefer dogfooding (`docs/DOGFOOD.md`) over building M4.
 
 ## Dogfooding from Claude Code
 
-You are an MCP client. Point yourself at Weaver and this repo becomes its own
+You are an MCP client. Point yourself at Hypothesise and this repo becomes its own
 test subject:
 
 ```bash
-weaver-api                     # terminal 1
-# then add weaver-proxy to your MCP config — docs/DOGFOOD.md has the block
+hypothesise-api                     # terminal 1
+# then add hypothesise-proxy to your MCP config — docs/DOGFOOD.md has the block
 ```
 
 Observe mode blocks nothing. Every alert on ordinary work is a false positive,
@@ -112,8 +122,9 @@ and that number is the one nobody has yet.
 
 ## Open decisions
 
-- **ADR-007, ownership** — unresolved, and must close before the M1 payment.
-  `weaver_core` stays separable only until it ships.
+- **ADR-007, ownership** — closed by ADR-039: Siddhant owns the code
+  (`github.com/siddhant-shahhh/Hypothesise`) and publishes to PyPI from his
+  account. The **license** is still open and must be set before the first upload.
 - Which MCP servers the client actually runs is still unknown; GitHub,
   Postgres and shell are assumed.
 
@@ -123,6 +134,6 @@ and that number is the one nobody has yet.
 - New detector → benign counterpart scenario first.
 - Changed a dependency → `rm -rf .venv && bash scripts/dev-setup.sh` before
   trusting the suite. That is how both undeclared dependencies were caught.
-- Working codename `weaver`; the product name is undecided **and now blocking**
-  — the PyPI name is taken, so a distribution name must be chosen before
-  anything ships (ADR-030).
+- The product and the code are both `hypothesise` (British spelling — the US
+  `hypothesize` is an unrelated PyPI package). `weaver` survives only in old
+  ADRs, which are history and are not edited.

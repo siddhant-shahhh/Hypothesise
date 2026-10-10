@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """End-to-end smoke test: drive the proxy yourself, without an agent.
 
-    python3 scripts/ops/smoke.py --config weaver.config.json
+    python3 scripts/ops/smoke.py --config hypothesise.config.json
 
 An empty dashboard has two completely different causes, and no way to tell
 them apart from the dashboard:
 
-  A. Weaver is broken — the proxy did not start, an upstream failed, or events
+  A. Hypothesise is broken — the proxy did not start, an upstream failed, or events
      are not reaching the control plane.
-  B. Weaver is fine and the agent simply never called it. Coding agents have
+  B. Hypothesise is fine and the agent simply never called it. Coding agents have
      their own built-in file tools and often prefer them to an MCP filesystem
      server, so a session can look busy and produce no MCP traffic at all.
 
 This script removes the agent from the picture. It starts the proxy exactly as
 your MCP client would, speaks JSON-RPC to it over stdin/stdout, lists the tools
 the agent would see, calls a few read-only ones, and then checks whether
-`/v1/stats` went up. If this passes, Weaver works and the answer is B.
+`/v1/stats` went up. If this passes, Hypothesise works and the answer is B.
 
-Imports nothing from weaver — it launches the CLI as a subprocess, which is the
+Imports nothing from hypothesise — it launches the CLI as a subprocess, which is the
 same thing the client does, so it exercises the packaging too (ADR-032).
 """
 
@@ -138,7 +138,7 @@ def fs_root_from(config: dict) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="weaver.config.json")
+    ap.add_argument("--config", default="hypothesise.config.json")
     ap.add_argument("--api", default="http://127.0.0.1:8080")
     ap.add_argument("--timeout", type=float, default=120.0,
                     help="first-response timeout; npx may download servers")
@@ -148,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     api = args.api.rstrip("/")
 
     print("=" * 70)
-    print("WEAVER SMOKE TEST — proxy driven by hand, no agent involved")
+    print("HYPOTHESISE SMOKE TEST — proxy driven by hand, no agent involved")
     print("=" * 70)
     print(f"\n  config       {cfg_path}")
     print(f"  control      {api}")
@@ -169,14 +169,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{OK}  control plane is up")
     except (urllib.error.URLError, OSError) as exc:
         print(f"{FAIL}  control plane unreachable: {exc}")
-        print("        Start it first:  weaver api")
+        print("        Start it first:  hypothesise api")
         return 1
 
     before = http_json(f"{api}/v1/stats").get("events", 0)
     print(f"{INFO}  events in the database before this run: {before}")
 
     # 2 ---------------------------------------------------------------- launch
-    argv_proxy = [sys.executable, "-m", "weaver", "proxy",
+    argv_proxy = [sys.executable, "-m", "hypothesise", "proxy",
                   "--config", str(cfg_path), "--detect", "--api", api]
     print(f"{INFO}  launching: {' '.join(argv_proxy)}")
     print(f"{INFO}  first call may take a minute — npx downloads the servers")
@@ -186,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
         proxy.send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                     "params": {"protocolVersion": "2024-11-05",
                                "capabilities": {},
-                               "clientInfo": {"name": "weaver-smoke",
+                               "clientInfo": {"name": "hypothesise-smoke",
                                               "version": "1"}}})
         init = proxy.await_id(1, args.timeout)
         if init is None:
@@ -212,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"          {name}")
         print("\n        This is the list your agent sees. If the agent has its")
         print("        own built-in file tools, it may use those instead and")
-        print("        none of this will reach Weaver.")
+        print("        none of this will reach Hypothesise.")
 
         # 4 -------------------------------------------------------------- call
         by_base = {base_name(t): t for t in tools}
@@ -267,8 +267,8 @@ def main(argv: list[str] | None = None) -> int:
     if after > before:
         print(f"PASS — {after - before} new events reached the control plane.")
         print(f"       Open {api} → Sessions. The newest session is this run.")
-        print("\n       Weaver works. If your agent produces nothing, the agent")
-        print("       is not calling these tools — not a Weaver fault.")
+        print("\n       Hypothesise works. If your agent produces nothing, the agent")
+        print("       is not calling these tools — not a Hypothesise fault.")
         print("=" * 70)
         return 0
 
@@ -276,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     print("       The tool calls worked, so interception is fine; the events")
     print("       are being lost on the way to the control plane.")
     print("\n       Check for this line in the stderr below:")
-    print("           weaver: shipping events to <url>/v1/events")
+    print("           hypothesise: shipping events to <url>/v1/events")
     print("       Missing it means --api never took effect.")
     if stderr:
         print("\n  proxy stderr:")

@@ -1,55 +1,59 @@
 # Operations
 
-Running Weaver beyond a laptop. Everything here is verified except where it
+Running Hypothesise beyond a laptop. Everything here is verified except where it
 says otherwise.
 
 ---
 
 ## Install
 
-> **Nothing is published yet, and the name `weaver` is already taken on PyPI**
-> (ADR-030). `pip install weaver` installs an unrelated third-party package —
-> do not run it. Install from the repo:
+As a tool, in its own environment (ADR-034):
 
 ```bash
-git clone <repo> && cd AI_Layer
-bash scripts/dev-setup.sh          # creates .venv; PEP 668 makes this mandatory
-source .venv/bin/activate
-weaver --help
+uv tool install hypothesise        # or: pipx install hypothesise
+hypothesise init                   # connect Claude Code / Claude Desktop / Cursor / VS Code
+hypothesise api                    # dashboard on http://127.0.0.1:8080
 ```
 
-Once a distribution name is chosen and published, this becomes
-`pip install <name>` (and `pip install '<name>[postgres]'` for Postgres). The
-packaging is built and statically validated; `scripts/ops/release-check.sh`
-builds the wheel and proves a clean install works.
+**Not published yet.** Until the first upload, install from a checkout:
+`uv tool install /path/to/AI_Layer` (or `pipx install /path/to/AI_Layer`).
+For development, `bash scripts/dev-setup.sh` (editable install in a virtualenv;
+PEP 668 makes one mandatory). Postgres: `uv tool install 'hypothesise[postgres]'`.
 
-One command, five subcommands:
+`scripts/ops/release-check.sh` builds the wheel and proves a clean install works.
+
+The commands:
 
 ```bash
-weaver api [--port 8080] [--demo] [--db URL] [--webhook URL]
-weaver proxy --config FILE [--detect] [--api URL]
-weaver doctor
-weaver migrate [--check] [--db URL]
-weaver version
+hypothesise init [--client APP] [--project DIR] [--dry-run] [--yes]
+hypothesise status
+hypothesise uninstall [--client APP] [--dry-run] [--yes]
+hypothesise api [--port 8080] [--demo] [--db URL] [--webhook URL]   # alias: dashboard
+hypothesise proxy --config FILE [--detect] [--api URL]
+hypothesise wrap --client C --server S -- CMD...    # written into app configs by init
+hypothesise hook claude-code                        # written into Claude Code by init
+hypothesise doctor
+hypothesise migrate [--check] [--db URL]
+hypothesise version
 ```
 
 ## Database and migrations
 
-Default location `~/.weaver/weaver.db`, overridable with `WEAVER_HOME` or
+Default location `~/.hypothesise/hypothesise.db`, overridable with `HYPOTHESISE_HOME` or
 `--db`. Deliberately outside your project (ADR-013).
 
 ```bash
-weaver migrate            # bring the schema up to date
-weaver migrate --check    # exit 1 if migrations are pending — use as a deploy gate
+hypothesise migrate            # bring the schema up to date
+hypothesise migrate --check    # exit 1 if migrations are pending — use as a deploy gate
 ```
 
-`weaver api` migrates on startup, so you rarely run this by hand. It matters
+`hypothesise api` migrates on startup, so you rarely run this by hand. It matters
 when you upgrade: **`create_all` does not add columns to existing tables**, and
 M4 added two. Any database from before then needs this (ADR-026).
 
 ### Adding a migration
 
-Append to `MIGRATIONS` in `packages/store/weaver_store/migrate.py`.
+Append to `MIGRATIONS` in `packages/store/hypothesise_store/migrate.py`.
 
 - append, never edit — a shipped migration has already run on someone's machine
 - each step must be safe to re-run
@@ -68,25 +72,25 @@ curl -s localhost:8080/metrics
 ```
 
 ```
-weaver_events_total 4812
-weaver_decisions_total{verdict="allow"} 4799
-weaver_decisions_total{verdict="ask"} 11
-weaver_decisions_total{verdict="block"} 2
-weaver_agents{zone="cold"} 5
-weaver_agents_quarantined 0
-weaver_approvals_pending 0
-weaver_detector_errors_total 0
-weaver_signals_total{detector="novel_edge"} 14
+hypothesise_events_total 4812
+hypothesise_decisions_total{verdict="allow"} 4799
+hypothesise_decisions_total{verdict="ask"} 11
+hypothesise_decisions_total{verdict="block"} 2
+hypothesise_agents{zone="cold"} 5
+hypothesise_agents_quarantined 0
+hypothesise_approvals_pending 0
+hypothesise_detector_errors_total 0
+hypothesise_signals_total{detector="novel_edge"} 14
 ```
 
 ### What to alert on
 
 | Signal | Why it matters |
 |---|---|
-| `weaver_detector_errors_total > 0` | A detector is crashing and therefore silent. This is how `scope_widening` was broken for days. |
-| `weaver_decisions_total{verdict="block"}` rising on normal work | False positives. Someone is about to uninstall this. |
-| `weaver_approvals_pending > 0` for minutes | An agent is stalled. Unanswered approvals **deny** after 120s (ADR-017). |
-| `weaver_agents_quarantined > 0` | Needs a human — quarantine is never cleared by time. |
+| `hypothesise_detector_errors_total > 0` | A detector is crashing and therefore silent. This is how `scope_widening` was broken for days. |
+| `hypothesise_decisions_total{verdict="block"}` rising on normal work | False positives. Someone is about to uninstall this. |
+| `hypothesise_approvals_pending > 0` for minutes | An agent is stalled. Unanswered approvals **deny** after 120s (ADR-017). |
+| `hypothesise_agents_quarantined > 0` | Needs a human — quarantine is never cleared by time. |
 | `/readyz` returning 503 | Stale schema or unreachable database. |
 
 ## Containers
@@ -167,8 +171,8 @@ an empty environment.
 ## Backup and restore
 
 ```bash
-sqlite3 ~/.weaver/weaver.db ".backup '/backup/weaver-$(date +%F).db'"   # SQLite
-pg_dump "$WEAVER_DB_URL" > weaver.sql                                   # Postgres
+sqlite3 ~/.hypothesise/hypothesise.db ".backup '/backup/hypothesise-$(date +%F).db'"   # SQLite
+pg_dump "$HYPOTHESISE_DB_URL" > hypothesise.sql                                   # Postgres
 ```
 
 What is lost if you lose the database: event history, the behavioural graph and
@@ -176,7 +180,7 @@ its accumulated risk, agent trust scores, approval history. **Baselines rebuild
 themselves** from replayed traffic, but resource reputation is genuinely gone —
 it is the accumulated product of everything that ever happened.
 
-Restore, then `weaver migrate`.
+Restore, then `hypothesise migrate`.
 
 ## Known limitations
 

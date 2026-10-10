@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Red-team runner — drives the real proxy through the attack catalogue.
 
-Not a unit test. This starts an actual WeaverProxy over real MCP server
+Not a unit test. This starts an actual HypothesiseProxy over real MCP server
 subprocesses in a throwaway sandbox, and reports what got through.
 
     python redteam/run.py                # full suite
@@ -28,15 +28,15 @@ sys.path.insert(0, str(ROOT / "redteam"))
 
 import attacks as catalogue_mod  # noqa: E402
 import sandbox as sandbox_mod  # noqa: E402
-from weaver_core.engine import Engine  # noqa: E402
-from weaver_core.events import Verdict  # noqa: E402
-from weaver_core.scenario import load_all  # noqa: E402
-from weaver_core.trust.model import TrustStore  # noqa: E402
-from weaver_proxy import protocol as p  # noqa: E402
-from weaver_proxy.config import ProxyConfig  # noqa: E402
-from weaver_proxy.gate import GateConfig  # noqa: E402
-from weaver_proxy.server import WeaverProxy  # noqa: E402
-from weaver_proxy.upstream import UpstreamConfig  # noqa: E402
+from hypothesise_core.engine import Engine  # noqa: E402
+from hypothesise_core.events import Verdict  # noqa: E402
+from hypothesise_core.scenario import load_all  # noqa: E402
+from hypothesise_core.trust.model import TrustStore  # noqa: E402
+from hypothesise_proxy import protocol as p  # noqa: E402
+from hypothesise_proxy.config import ProxyConfig  # noqa: E402
+from hypothesise_proxy.gate import GateConfig  # noqa: E402
+from hypothesise_proxy.server import HypothesiseProxy  # noqa: E402
+from hypothesise_proxy.upstream import UpstreamConfig  # noqa: E402
 
 RESET, BOLD, DIM = "\033[0m", "\033[1m", "\033[2m"
 RED, YELLOW, GREEN, CYAN, MAG = (
@@ -79,7 +79,7 @@ async def run_attack(attack, engine: Engine, denied_first: bool) -> dict:
         ],
         gate=GateConfig(mode="observe", fail_mode="open", budget_ms=50),
     )
-    proxy = WeaverProxy(cfg, engine=engine)
+    proxy = HypothesiseProxy(cfg, engine=engine)
     engine.reset_sessions()
     # Each attack is independent; trust damage must not leak between them.
     engine.trust = TrustStore()
@@ -196,7 +196,7 @@ def report(results: list[dict]) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Weaver red-team suite")
+    ap = argparse.ArgumentParser(description="Hypothesise red-team suite")
     ap.add_argument("--only", help="filter by tag or attack name")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()

@@ -1,7 +1,7 @@
-# Running Weaver against your own agents
+# Running Hypothesise against your own agents
 
 There is no production agent traffic to learn from (ADR-010), and this is the
-cheapest fix. Point your own Claude Code / Cursor / Copilot at Weaver and work
+cheapest fix. Point your own Claude Code / Cursor / Copilot at Hypothesise and work
 normally. Real traffic, available today, costs nothing.
 
 **Observe mode only.** Nothing is blocked. Ever. Don't change that until M3.
@@ -13,16 +13,16 @@ normally. Real traffic, available today, costs nothing.
 ```bash
 cd /Volumes/Seagate/AI_Layer
 source .venv/bin/activate
-weaver-api                       # http://127.0.0.1:8080
+hypothesise-api                       # http://127.0.0.1:8080
 ```
 
-Leave it running. The database lives in `~/.weaver/weaver.db`, so it survives
+Leave it running. The database lives in `~/.hypothesise/hypothesise.db`, so it survives
 restarts and accumulates across sessions.
 
-## 2. Move your MCP servers behind Weaver
+## 2. Move your MCP servers behind Hypothesise
 
 Take whatever `mcpServers` block your client already has, and put it in
-`weaver.config.json` at the repo root:
+`hypothesise.config.json` at the repo root:
 
 ```json
 {
@@ -30,7 +30,7 @@ Take whatever `mcpServers` block your client already has, and put it in
     "github":     {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"]},
     "filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/you/code"]}
   },
-  "weaver": {
+  "hypothesise": {
     "mode": "observe",
     "failMode": "open",
     "budgetMs": 50,
@@ -39,17 +39,17 @@ Take whatever `mcpServers` block your client already has, and put it in
 }
 ```
 
-## 3. Point the client at Weaver instead
+## 3. Point the client at Hypothesise instead
 
 Same shape for all three — one server replacing the list.
 
 **Claude Code** — `~/.claude.json` (or `claude mcp add`):
 
 ```json
-{"mcpServers": {"weaver": {
+{"mcpServers": {"hypothesise": {
   "command": "/absolute/path/to/your/env/bin/python3",
-  "args": ["-m", "weaver", "proxy",
-           "--config", "/Volumes/Seagate/AI_Layer/weaver.config.json", "--detect"]
+  "args": ["-m", "hypothesise", "proxy",
+           "--config", "/Volumes/Seagate/AI_Layer/hypothesise.config.json", "--detect"]
 }}}
 ```
 
@@ -59,11 +59,11 @@ Same shape for all three — one server replacing the list.
 `mcpServers`; the value is identical.
 
 Use an **absolute path**, because the client does not inherit your shell's
-activated venv — and point it at the **interpreter** (`python3 -m weaver`)
+activated venv — and point it at the **interpreter** (`python3 -m hypothesise`)
 rather than a console script in `bin/`. One path to get wrong instead of two,
 and no shim to be missing. ADR-032.
 
-Then check it before you rely on it, from the environment Weaver is installed
+Then check it before you rely on it, from the environment Hypothesise is installed
 in:
 
 ```bash
@@ -134,10 +134,10 @@ being something we invented.
 
 ```bash
 curl -s localhost:8080/v1/detectors    # anything in "errors" is broken and silent
-curl -s localhost:8080/v1/agents       # your agents, as Weaver sees them
+curl -s localhost:8080/v1/agents       # your agents, as Hypothesise sees them
 ```
 
-If events aren't arriving: the proxy prints `weaver: shipping events to ...` on
+If events aren't arriving: the proxy prints `hypothesise: shipping events to ...` on
 stderr at startup. No line means `apiUrl` isn't set. The shipper retries three
 times with backoff, then drops the batch and counts it — it never blocks your
 agent and never grows without bound.
@@ -145,4 +145,4 @@ agent and never grows without bound.
 ## Turning it off
 
 Put your original `mcpServers` block back. Nothing else to undo. The database
-in `~/.weaver` stays until you delete it.
+in `~/.hypothesise` stays until you delete it.

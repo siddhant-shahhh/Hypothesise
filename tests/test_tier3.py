@@ -6,17 +6,17 @@ different agent's history.
 """
 
 import pytest
-from weaver_core.baseline.model import Baseline
-from weaver_core.detectors.base import DetectorContext, SessionWindow
-from weaver_core.detectors.tier3 import (
+from hypothesise_core.baseline.model import Baseline
+from hypothesise_core.detectors.base import DetectorContext, SessionWindow
+from hypothesise_core.detectors.tier3 import (
     REPUTATION_THRESHOLD,
     blast_radius,
     egress_after_broad_access,
     path_risk,
     resource_reputation,
 )
-from weaver_core.events import Action, Event, Resource, ResourceClass, Tool
-from weaver_core.graph.model import GraphSnapshot, Node, resource_node
+from hypothesise_core.events import Action, Event, Resource, ResourceClass, Tool
+from hypothesise_core.graph.model import GraphSnapshot, Node, resource_node
 
 
 def _ev(step, uri, cls, action=Action.READ, tool=("fs-mcp", "read_file")):
@@ -108,7 +108,7 @@ def test_reputation_is_damped_by_low_confidence():
 
 
 def test_reputation_threshold_is_above_every_class_floor():
-    from weaver_core.graph.model import RISK_FLOORS
+    from hypothesise_core.graph.model import RISK_FLOORS
 
     assert max(RISK_FLOORS.values()) < REPUTATION_THRESHOLD
 

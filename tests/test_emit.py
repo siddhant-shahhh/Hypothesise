@@ -3,8 +3,8 @@
 import asyncio
 
 import pytest
-from weaver_core.events import Event, Resource, Tool
-from weaver_proxy.emit import EventEmitter
+from hypothesise_core.events import Event, Resource, Tool
+from hypothesise_proxy.emit import EventEmitter
 
 
 def _ev(step: int = 0) -> Event:

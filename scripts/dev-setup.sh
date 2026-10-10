@@ -68,20 +68,20 @@ echo "==> target: $("$TARGET" -c 'import sys; print(sys.executable)')"
 "$TARGET" -m pip install -q --upgrade pip >/dev/null 2>&1 || true
 
 echo "==> checking for a shadowing package"
-# `weaver` is a real package on PyPI (ADR-030). `pip uninstall weaver` removes
-# its metadata but can leave site-packages/weaver/ behind, and a real directory
-# there beats an editable install's path entry — so `import weaver` silently
+# A stale or foreign install (ADR-031 — the old `weaver` name collided with a PyPI
+# package) can leave site-packages/hypothesise/ behind, and a real directory
+# there beats an editable install's path entry — so `import hypothesise` silently
 # resolves to the stranger's code and fails on ITS imports.
 SITE="$("$TARGET" -c 'import site; print(site.getsitepackages()[0])' 2>/dev/null || echo "")"
-if [ -n "$SITE" ] && [ -d "$SITE/weaver" ] && [ ! -e "$SITE/weaver/__main__.py" ]; then
+if [ -n "$SITE" ] && [ -d "$SITE/hypothesise" ] && [ ! -e "$SITE/hypothesise/__main__.py" ]; then
   cat <<MSG
-error: a different package named 'weaver' is installed and will shadow this one.
+error: a different package named 'hypothesise' is installed and will shadow this one.
 
-    $SITE/weaver
+    $SITE/hypothesise
 
-That is almost certainly the unrelated 'weaver' package from PyPI. Remove it:
+That is a stale or foreign copy, not this repo. Remove it:
 
-    rm -rf "$SITE/weaver" "$SITE"/weaver-*.dist-info
+    rm -rf "$SITE/hypothesise" "$SITE"/hypothesise-*.dist-info
     bash scripts/dev-setup.sh
 
 MSG
@@ -89,7 +89,7 @@ MSG
 fi
 echo "    none found"
 
-echo "==> installing weaver packages (editable)"
+echo "==> installing hypothesise packages (editable)"
 # Every member must have a pyproject.toml, or pip fails with a message that
 # looks nothing like the real cause. Check first and say so plainly.
 MISSING=""
@@ -132,15 +132,15 @@ echo "==> installing dev tools"
 # broken install.
 echo "==> verifying"
 if ! (cd /tmp && "$TARGET" -c "
-import weaver, weaver_core, weaver_store, weaver_proxy, weaver_api
-print('    weaver      ', weaver.__version__)
-print('    weaver_core ', weaver_core.__version__)
-print('    weaver_store  ok')
-print('    weaver_proxy', weaver_proxy.__version__)
-print('    weaver_api    ok')
+import hypothesise, hypothesise_core, hypothesise_store, hypothesise_proxy, hypothesise_api
+print('    hypothesise      ', hypothesise.__version__)
+print('    hypothesise_core ', hypothesise_core.__version__)
+print('    hypothesise_store  ok')
+print('    hypothesise_proxy', hypothesise_proxy.__version__)
+print('    hypothesise_api    ok')
 "); then
   echo "!! verification failed. Run: $TARGET scripts/doctor.py"
-  echo "   (use the standalone script, not \`weaver doctor\` — if the weaver"
+  echo "   (use the standalone script, not \`hypothesise doctor\` — if the hypothesise"
   echo "    package itself is broken, the CLI cannot load to diagnose it)"
   exit 1
 fi
@@ -158,12 +158,12 @@ Activate the environment:
 Then:
 
     pytest
-    python -m weaver_api --demo
+    python -m hypothesise_api --demo
     python scripts/replay.py --all
 
 Or run without activating, using the full path:
 
     ${TARGET} -m pytest
-    ${TARGET} -m weaver_api --demo
+    ${TARGET} -m hypothesise_api --demo
 
 MSG

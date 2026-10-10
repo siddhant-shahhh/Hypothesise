@@ -30,5 +30,5 @@ build/
 # Test fixtures (fake secrets) and machine-specific config.
 # Regenerate with scripts/ops/testbed-setup.sh
 testbed/
-weaver.config.json
+hypothesise.config.json
 .vscode/mcp.json

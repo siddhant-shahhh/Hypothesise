@@ -10,9 +10,9 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
-from weaver_core.events import Event, Resource, Tool
-from weaver_proxy.emit import EventEmitter
-from weaver_proxy.shipper import Shipper
+from hypothesise_core.events import Event, Resource, Tool
+from hypothesise_proxy.emit import EventEmitter
+from hypothesise_proxy.shipper import Shipper
 
 
 class _Collector(BaseHTTPRequestHandler):
@@ -163,8 +163,8 @@ async def test_shipping_never_blocks_emit(collector):
 @pytest.mark.asyncio
 async def test_no_shipper_when_no_api_configured():
     """Local-only is the default. Nothing leaves the machine unless asked."""
-    from weaver_proxy.config import ProxyConfig
-    from weaver_proxy.server import WeaverProxy
+    from hypothesise_proxy.config import ProxyConfig
+    from hypothesise_proxy.server import HypothesiseProxy
 
-    assert WeaverProxy(ProxyConfig()).shipper is None
-    assert WeaverProxy(ProxyConfig(api_url="http://127.0.0.1:8080")).shipper is not None
+    assert HypothesiseProxy(ProxyConfig()).shipper is None
+    assert HypothesiseProxy(ProxyConfig(api_url="http://127.0.0.1:8080")).shipper is not None

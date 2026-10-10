@@ -8,15 +8,15 @@ an agent with no history cannot have anomalies.
 from pathlib import Path
 
 import pytest
-from weaver_core.detectors.base import (
+from hypothesise_core.detectors.base import (
     detector_errors,
     reset_detector_errors,
     tier1_names,
     tier2_names,
 )
-from weaver_core.engine import Engine
-from weaver_core.events import Verdict
-from weaver_core.scenario import load_all, load_scenario
+from hypothesise_core.engine import Engine
+from hypothesise_core.events import Verdict
+from hypothesise_core.scenario import load_all, load_scenario
 
 ROOT = Path(__file__).resolve().parent.parent
 TRAIN_PASSES = 3
@@ -44,7 +44,7 @@ def run(eng: Engine, name: str):
     eng.reset_sessions()
     # Independent hypothetical -> clean trust. See test_trust.py for the
     # carries-forward behaviour, which is what production does.
-    from weaver_core.trust.model import TrustStore
+    from hypothesise_core.trust.model import TrustStore
 
     eng.trust = TrustStore()
     fired, hits = False, []
@@ -173,8 +173,8 @@ def test_network_shell_without_a_secret_is_not_exfil(engine):
 def test_internal_shell_curl_is_not_egress(engine):
     """`curl http://api.internal/health` in a deploy script must not classify
     as network egress, or every health check is an incident."""
-    from weaver_core.classify import classify_resource
-    from weaver_core.events import ResourceClass
+    from hypothesise_core.classify import classify_resource
+    from hypothesise_core.events import ResourceClass
 
     assert classify_resource("shell://curl -s http://api.internal/health") is ResourceClass.SHELL
     assert classify_resource("shell://curl -s http://10.0.0.5/ping") is ResourceClass.SHELL

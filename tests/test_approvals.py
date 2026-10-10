@@ -8,8 +8,8 @@ import asyncio
 
 import pytest
 from fastapi.testclient import TestClient
-from weaver_api.app import create_app
-from weaver_core.events import Event, Resource, ResourceClass, Tool
+from hypothesise_api.app import create_app
+from hypothesise_core.events import Event, Resource, ResourceClass, Tool
 
 
 @pytest.fixture
@@ -82,7 +82,7 @@ def test_unknown_approval_is_404(client):
 def test_shadow_report(client):
     """What enforce WOULD have done — the report you read before flipping."""
     c, app = client
-    from weaver_api.demo import load_demo
+    from hypothesise_api.demo import load_demo
 
     load_demo(app.state.repo, app.state.engine)
     s = c.get("/v1/shadow").json()
@@ -115,7 +115,7 @@ def _event():
 
 @pytest.mark.asyncio
 async def test_proxy_waits_then_proceeds_on_approval():
-    from weaver_proxy.approval import ApprovalClient
+    from hypothesise_proxy.approval import ApprovalClient
 
     ac = ApprovalClient("http://x", ttl=5)
     fake = _FakeAPI([{"state": "pending"}, {"state": "approved",
@@ -130,7 +130,7 @@ async def test_proxy_waits_then_proceeds_on_approval():
 
 @pytest.mark.asyncio
 async def test_denial_blocks():
-    from weaver_proxy.approval import ApprovalClient
+    from hypothesise_proxy.approval import ApprovalClient
 
     ac = ApprovalClient("http://x", ttl=5)
     ac._call = _FakeAPI([{"state": "denied", "decided_by": "pratham"}])._call
@@ -142,7 +142,7 @@ async def test_denial_blocks():
 async def test_timeout_denies_not_allows():
     """ADR-017. An agent running unattended overnight must not be able to
     obtain an ASK-worthy action by waiting for nobody to answer."""
-    from weaver_proxy.approval import ApprovalClient
+    from hypothesise_proxy.approval import ApprovalClient
 
     ac = ApprovalClient("http://x", ttl=1.2)
     ac._call = _FakeAPI([])._call            # always pending
@@ -155,7 +155,7 @@ async def test_timeout_denies_not_allows():
 @pytest.mark.asyncio
 async def test_unreachable_control_plane_denies():
     """We cannot ask a human, so we cannot claim a human said yes."""
-    from weaver_proxy.approval import ApprovalClient
+    from hypothesise_proxy.approval import ApprovalClient
 
     ac = ApprovalClient("http://127.0.0.1:1", ttl=1, timeout=0.3)
     out = await asyncio.wait_for(ac.request(_event(), "why"), timeout=8)
@@ -168,11 +168,11 @@ def test_enforce_mode_requires_a_control_plane(tmp_path, monkeypatch):
     than discover it in production."""
     import json
 
-    from weaver_proxy.__main__ import main
+    from hypothesise_proxy.__main__ import main
 
     cfg = tmp_path / "c.json"
-    cfg.write_text(json.dumps({"mcpServers": {}, "weaver": {"mode": "enforce"}}))
-    monkeypatch.setattr("sys.argv", ["weaver-proxy", "--config", str(cfg)])
+    cfg.write_text(json.dumps({"mcpServers": {}, "hypothesise": {"mode": "enforce"}}))
+    monkeypatch.setattr("sys.argv", ["hypothesise-proxy", "--config", str(cfg)])
     assert main() == 2
 
 
@@ -182,21 +182,21 @@ def test_env_overrides_the_config_file(tmp_path, monkeypatch):
     control."""
     import json
 
-    from weaver_proxy.config import ProxyConfig
+    from hypothesise_proxy.config import ProxyConfig
 
     cfg = tmp_path / "c.json"
-    cfg.write_text(json.dumps({"mcpServers": {}, "weaver": {"mode": "observe"}}))
+    cfg.write_text(json.dumps({"mcpServers": {}, "hypothesise": {"mode": "observe"}}))
     assert ProxyConfig.load(cfg).gate.mode == "observe"
 
-    monkeypatch.setenv("WEAVER_MODE", "enforce")
+    monkeypatch.setenv("HYPOTHESISE_MODE", "enforce")
     assert ProxyConfig.load(cfg).gate.mode == "enforce"
 
 
 def test_rules_load_from_config(tmp_path):
     import json
 
-    from weaver_core.policy.rules import RuleSet
-    from weaver_proxy.config import ProxyConfig
+    from hypothesise_core.policy.rules import RuleSet
+    from hypothesise_proxy.config import ProxyConfig
 
     cfg = tmp_path / "c.json"
     cfg.write_text(json.dumps({

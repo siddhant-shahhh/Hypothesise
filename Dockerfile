@@ -1,4 +1,4 @@
-# Weaver control plane.
+# Hypothesise control plane.
 #
 # The PROXY is not containerised on purpose: it runs as a subprocess of the
 # user's MCP client and spawns the upstream MCP servers as its own children.
@@ -9,7 +9,7 @@ FROM python:3.12-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    WEAVER_HOME=/data
+    HYPOTHESISE_HOME=/data
 
 WORKDIR /app
 
@@ -23,9 +23,9 @@ RUN pip install --no-cache-dir . && \
 COPY scenarios/ ./scenarios/
 
 # Non-root: this thing exists to hold security telemetry.
-RUN useradd --create-home --uid 10001 weaver && \
-    mkdir -p /data && chown -R weaver:weaver /data /app
-USER weaver
+RUN useradd --create-home --uid 10001 hypothesise && \
+    mkdir -p /data && chown -R hypothesise:hypothesise /data /app
+USER hypothesise
 
 VOLUME ["/data"]
 EXPOSE 8080
@@ -34,5 +34,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request,sys; \
         sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=2).status==200 else 1)"
 
-ENTRYPOINT ["weaver"]
+ENTRYPOINT ["hypothesise"]
 CMD ["api", "--host", "0.0.0.0", "--port", "8080"]

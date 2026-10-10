@@ -9,12 +9,12 @@ import sys
 from pathlib import Path
 
 import pytest
-from weaver_core.events import ResourceClass, Verdict
-from weaver_proxy import protocol as p
-from weaver_proxy.config import ProxyConfig
-from weaver_proxy.gate import GateConfig
-from weaver_proxy.server import WeaverProxy, extract_resource_uri
-from weaver_proxy.upstream import UpstreamConfig
+from hypothesise_core.events import ResourceClass, Verdict
+from hypothesise_proxy import protocol as p
+from hypothesise_proxy.config import ProxyConfig
+from hypothesise_proxy.gate import GateConfig
+from hypothesise_proxy.server import HypothesiseProxy, extract_resource_uri
+from hypothesise_proxy.upstream import UpstreamConfig
 
 FIXTURE = str(Path(__file__).parent / "fixtures" / "fake_mcp_server.py")
 
@@ -29,7 +29,7 @@ def _config(*ups: UpstreamConfig, mode: str = "observe", budget_ms: int = 50) ->
                        gate=GateConfig(mode=mode, fail_mode="open", budget_ms=budget_ms))
 
 
-async def _boot(proxy: WeaverProxy) -> dict:
+async def _boot(proxy: HypothesiseProxy) -> dict:
     await proxy.start_upstreams()
     return await proxy.handle(p.request(1, "initialize", {
         "protocolVersion": "2024-11-05",
@@ -39,10 +39,10 @@ async def _boot(proxy: WeaverProxy) -> dict:
 
 @pytest.mark.asyncio
 async def test_initialize_and_aggregate_tools():
-    proxy = WeaverProxy(_config(_upstream("fs-mcp")))
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp")))
     try:
         init = await _boot(proxy)
-        assert init["result"]["serverInfo"]["name"] == "weaver-proxy"
+        assert init["result"]["serverInfo"]["name"] == "hypothesise-proxy"
         tools = (await proxy.handle(p.request(2, "tools/list")))["result"]["tools"]
         assert {t["name"] for t in tools} == {"read_file", "write_file", "exec"}
     finally:
@@ -51,7 +51,7 @@ async def test_initialize_and_aggregate_tools():
 
 @pytest.mark.asyncio
 async def test_agent_identity_from_client_handshake():
-    proxy = WeaverProxy(_config(_upstream("fs-mcp")))
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp")))
     try:
         await _boot(proxy)
         assert proxy.agent_id == "test-agent"
@@ -66,7 +66,7 @@ async def test_two_upstreams_collide_and_get_namespaced():
     This is the test that catches cross-upstream id collisions: two servers
     each numbering their responses from 1.
     """
-    proxy = WeaverProxy(_config(_upstream("fs-mcp"), _upstream("github-mcp")))
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp"), _upstream("github-mcp")))
     try:
         await _boot(proxy)
         tools = (await proxy.handle(p.request(2, "tools/list")))["result"]["tools"]
@@ -87,7 +87,7 @@ async def test_two_upstreams_collide_and_get_namespaced():
 
 @pytest.mark.asyncio
 async def test_tool_call_forwards_and_emits_event():
-    proxy = WeaverProxy(_config(_upstream("fs-mcp")))
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp")))
     try:
         await _boot(proxy)
         resp = await proxy.handle(p.request(3, "tools/call", {
@@ -107,7 +107,7 @@ async def test_tool_call_forwards_and_emits_event():
 
 @pytest.mark.asyncio
 async def test_unknown_tool_is_rejected_cleanly():
-    proxy = WeaverProxy(_config(_upstream("fs-mcp")))
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp")))
     try:
         await _boot(proxy)
         resp = await proxy.handle(p.request(3, "tools/call",
@@ -119,7 +119,7 @@ async def test_unknown_tool_is_rejected_cleanly():
 
 @pytest.mark.asyncio
 async def test_upstream_error_propagates_and_is_recorded():
-    proxy = WeaverProxy(_config(_upstream(
+    proxy = HypothesiseProxy(_config(_upstream(
         "fs-mcp", "--fail-tool", "exec", "--fail-text", "command failed: exit 1")))
     try:
         await _boot(proxy)
@@ -137,7 +137,7 @@ async def test_upstream_error_propagates_and_is_recorded():
 async def test_dead_upstream_does_not_kill_the_proxy():
     """One broken server must not take the others down with it."""
     bad = UpstreamConfig(name="broken", command="/nonexistent/binary", args=[])
-    proxy = WeaverProxy(_config(bad, _upstream("fs-mcp")))
+    proxy = HypothesiseProxy(_config(bad, _upstream("fs-mcp")))
     try:
         await _boot(proxy)
         tools = (await proxy.handle(p.request(2, "tools/list")))["result"]["tools"]
@@ -151,7 +151,7 @@ async def test_dead_upstream_does_not_kill_the_proxy():
 
 @pytest.mark.asyncio
 async def test_unsupported_method_returns_method_not_found():
-    proxy = WeaverProxy(_config(_upstream("fs-mcp")))
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp")))
     try:
         await _boot(proxy)
         resp = await proxy.handle(p.request(9, "resources/list", {}))
@@ -163,7 +163,7 @@ async def test_unsupported_method_returns_method_not_found():
 @pytest.mark.asyncio
 async def test_notifications_get_no_reply():
     """Replying to a notification is a protocol violation."""
-    proxy = WeaverProxy(_config(_upstream("fs-mcp")))
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp")))
     try:
         await _boot(proxy)
         assert await proxy.handle(p.notification("notifications/initialized")) is None
@@ -173,7 +173,7 @@ async def test_notifications_get_no_reply():
 
 @pytest.mark.asyncio
 async def test_steps_increment_across_a_session():
-    proxy = WeaverProxy(_config(_upstream("fs-mcp")))
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp")))
     try:
         await _boot(proxy)
         for i in range(3):
@@ -208,9 +208,9 @@ def test_extract_resource_uri_unknown_shape_yields_empty():
 @pytest.mark.asyncio
 async def test_proxy_with_engine_records_decisions():
     """The engine plugged into the Gate, end to end through a real subprocess."""
-    from weaver_core.engine import Engine
+    from hypothesise_core.engine import Engine
 
-    proxy = WeaverProxy(_config(_upstream("fs-mcp")), engine=Engine())
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp")), engine=Engine())
     try:
         await _boot(proxy)
         await proxy.handle(p.request(3, "tools/call",
@@ -226,9 +226,9 @@ async def test_proxy_with_engine_records_decisions():
 async def test_engine_decisions_stay_within_budget():
     """Tier-1 detectors run inline. If they ever exceed the budget the Gate
     fails open and detection silently stops."""
-    from weaver_core.engine import Engine
+    from hypothesise_core.engine import Engine
 
-    proxy = WeaverProxy(_config(_upstream("fs-mcp"), budget_ms=50), engine=Engine())
+    proxy = HypothesiseProxy(_config(_upstream("fs-mcp"), budget_ms=50), engine=Engine())
     try:
         await _boot(proxy)
         for i in range(20):
@@ -250,9 +250,9 @@ async def test_upstream_refusal_is_recorded_as_denied():
     retry_after_denial could never fire on real traffic while still passing
     its tests, because the scenario YAML sets the status by hand.
     """
-    from weaver_core.events import Status
+    from hypothesise_core.events import Status
 
-    proxy = WeaverProxy(_config(_upstream(
+    proxy = HypothesiseProxy(_config(_upstream(
         "fs-mcp", "--fail-tool", "read_file", "--fail-text", "permission denied")))
     try:
         await _boot(proxy)
@@ -267,9 +267,9 @@ async def test_upstream_refusal_is_recorded_as_denied():
 @pytest.mark.asyncio
 async def test_missing_file_is_an_error_not_a_denial():
     """Absence is not refusal. Agents probe for optional files constantly."""
-    from weaver_core.events import Status
+    from hypothesise_core.events import Status
 
-    proxy = WeaverProxy(_config(_upstream(
+    proxy = HypothesiseProxy(_config(_upstream(
         "fs-mcp", "--fail-tool", "read_file", "--fail-text", "ENOENT: no such file")))
     try:
         await _boot(proxy)
@@ -285,8 +285,8 @@ async def test_missing_file_is_an_error_not_a_denial():
 async def test_our_own_block_counts_as_a_denial_for_the_retry_detector():
     """An agent we just blocked, immediately probing a different route to the
     same target, is the clearest evasion signal there is."""
-    from weaver_core.detectors.base import SessionWindow
-    from weaver_core.events import Event, Outcome, Resource, ResourceClass, Status, Tool
+    from hypothesise_core.detectors.base import SessionWindow
+    from hypothesise_core.events import Event, Outcome, Resource, ResourceClass, Status, Tool
 
     w = SessionWindow()
     w.push(Event(agent_id="a", session_id="s", step=0,

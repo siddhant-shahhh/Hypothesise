@@ -6,11 +6,11 @@ to exist at all.
 """
 
 import pytest
-from weaver_core.events import Action, ResourceClass
-from weaver_core.graph.model import GraphSnapshot, edge_key, resource_node
-from weaver_core.risk.model import Weight
-from weaver_core.trust.model import TrustStore
-from weaver_proxy.sync import ControlPlaneSync
+from hypothesise_core.events import Action, ResourceClass
+from hypothesise_core.graph.model import GraphSnapshot, edge_key, resource_node
+from hypothesise_core.risk.model import Weight
+from hypothesise_core.trust.model import TrustStore
+from hypothesise_proxy.sync import ControlPlaneSync
 
 
 def _sync(**kw):

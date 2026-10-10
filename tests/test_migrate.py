@@ -7,15 +7,15 @@ fail to persist quarantine state, and say nothing.
 """
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
-from weaver_store.db import get_engine
-from weaver_store.migrate import (
+from hypothesise_store.db import get_engine
+from hypothesise_store.migrate import (
     MIGRATIONS,
     TARGET_VERSION,
     current_version,
     migrate,
     status,
 )
+from sqlalchemy import create_engine, inspect, text
 
 
 def _cols(engine, table):
@@ -89,7 +89,7 @@ def test_every_migration_is_safe_to_rerun():
 
 
 def test_init_db_runs_migrations_not_create_all():
-    from weaver_store.db import init_db
+    from hypothesise_store.db import init_db
 
     e = get_engine("sqlite:///:memory:")
     init_db(e)

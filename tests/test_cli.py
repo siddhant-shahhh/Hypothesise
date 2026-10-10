@@ -1,14 +1,14 @@
 """CLI tests.
 
 ADR-009 makes the first five minutes the thing this product is judged on, so
-`weaver --help` and every subcommand's argument surface are part of the
+`hypothesise --help` and every subcommand's argument surface are part of the
 deliverable rather than an afterthought.
 """
 
 from pathlib import Path
 
 import pytest
-from weaver.__main__ import build_parser, main
+from hypothesise.__main__ import build_parser, main
 
 
 def test_help_lists_every_subcommand(capsys):
@@ -23,12 +23,12 @@ def test_help_lists_every_subcommand(capsys):
 def test_help_tells_a_stranger_where_to_start(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
-    assert "weaver api --demo" in capsys.readouterr().out
+    assert "hypothesise api --demo" in capsys.readouterr().out
 
 
 def test_version(capsys):
     assert main(["version"]) == 0
-    assert "weaver 0.1.0" in capsys.readouterr().out
+    assert "hypothesise 0.1.0a1" in capsys.readouterr().out
 
 
 def test_no_subcommand_is_an_error():
@@ -61,7 +61,7 @@ def test_proxy_refuses_enforce_without_a_control_plane(tmp_path, capsys):
     import json
 
     cfg = tmp_path / "c.json"
-    cfg.write_text(json.dumps({"mcpServers": {}, "weaver": {"mode": "enforce"}}))
+    cfg.write_text(json.dumps({"mcpServers": {}, "hypothesise": {"mode": "enforce"}}))
     assert main(["proxy", "--config", str(cfg)]) == 2
     assert "enforce mode needs a control plane" in capsys.readouterr().err
 
@@ -87,7 +87,7 @@ def test_api_banner_names_the_dashboard_file_it_serves():
     static folder in site-packages, and that copy shadows the repo. The banner
     prints the absolute path so the answer is on screen, not in a bug report."""
     src = (Path(__file__).resolve().parents[1]
-           / "packages" / "cli" / "weaver" / "__main__.py").read_text()
+           / "packages" / "cli" / "hypothesise" / "__main__.py").read_text()
     body = src.split("def _cmd_api", 1)[1].split("def _cmd_proxy", 1)[0]
     assert "STATIC" in body
     assert "index.html" in body

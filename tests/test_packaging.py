@@ -87,7 +87,7 @@ def test_every_importable_package_is_in_the_wheel():
 def test_the_cli_entry_point_is_declared():
     cfg = _root_cfg()
     assert "[project.scripts]" in cfg
-    assert re.search(r'^\w[\w-]* = "weaver\.__main__:main"', cfg, re.M)
+    assert re.search(r'^\w[\w-]* = "hypothesise\.__main__:main"', cfg, re.M)
 
 
 def test_dev_setup_installs_every_member():
@@ -99,32 +99,39 @@ def test_dev_setup_installs_every_member():
         assert rel in setup, f"dev-setup.sh does not install {rel}"
 
 
-def test_no_document_tells_anyone_to_pip_install_a_taken_name():
-    """ADR-030. `weaver` belongs to someone else on PyPI, so that command
-    installs a stranger's package. Nothing is published yet either."""
-    for doc in ("docs/OPERATIONS.md", "docs/PRIMER.md", "README.md"):
-        path = ROOT / doc
-        if not path.is_file():
-            continue
-        for i, line in enumerate(path.read_text().splitlines(), 1):
-            if "pip install weaver" not in line:
-                continue
-            lowered = line.lower()
-            warned = any(w in lowered for w in
-                         ("do not", "don't", "unrelated", "stranger", "taken"))
-            assert warned, f"{doc}:{i} instructs `pip install weaver`: {line.strip()}"
+def test_readme_installs_it_as_a_cli_tool():
+    """ADR-034: the product is a command, so the README leads with an isolated
+    tool install (uv tool / pipx) — plain pip into a system Python is refused
+    under PEP 668 on Homebrew and most Linux distributions."""
+    readme = (ROOT / "README.md").read_text()
+    assert "uv tool install hypothesise" in readme
+    assert "pipx install hypothesise" in readme
+    assert "hypothesise init" in readme
+
+
+def test_readme_warns_about_the_lookalike_names():
+    readme = (ROOT / "README.md").read_text()
+    assert "`hypothesis`" in readme and "`hypothesize`" in readme
+
+
+def test_wheel_ships_the_demo_scenarios():
+    """`hypothesise api --demo` reads scenarios beside the package; an install
+    without them shows an empty demo and looks broken."""
+    cfg = _root_cfg()
+    assert '"scenarios/attack" = "hypothesise_api/scenarios/attack"' in cfg
+    assert '"scenarios/benign" = "hypothesise_api/scenarios/benign"' in cfg
 
 
 def test_standalone_doctor_diagnoses_a_shadowing_package(tmp_path):
     """A third-party package with the same name shadows ours, and the traceback
     comes from ITS imports — telling the reader nothing about this project.
 
-    `weaver` is taken on PyPI (ADR-030); `pip uninstall weaver` removes the
-    metadata but can leave site-packages/weaver/ behind, where a real directory
-    beats an editable install's path entry.
+    A stale or foreign `hypothesise` directory left in site-packages (ADR-031
+    recorded this happening with the old `weaver` name) beats an editable
+    install's path entry.
 
-    Note this runs `scripts/doctor.py`, not `weaver doctor`: the CLI's doctor
-    lives *inside* the weaver package, so when weaver is shadowed the CLI cannot
+    Note this runs `scripts/doctor.py`, not `hypothesise doctor`: the CLI's doctor
+    lives *inside* the hypothesise package, so when hypothesise is shadowed the CLI cannot
     load at all. The standalone script is the entry point that survives.
     """
     import os
@@ -132,10 +139,10 @@ def test_standalone_doctor_diagnoses_a_shadowing_package(tmp_path):
     import sys
 
     fake_site = tmp_path / "site-packages"
-    (fake_site / "weaver").mkdir(parents=True)
-    # What the PyPI package actually contains: a Fabric 1.x import that no
-    # longer resolves on any current Fabric.
-    (fake_site / "weaver" / "__init__.py").write_text("from fabric.api import *\n")
+    (fake_site / "hypothesise").mkdir(parents=True)
+    # A foreign package whose import fails — what the old `weaver` collision
+    # looked like (a Fabric 1.x import that no longer resolves).
+    (fake_site / "hypothesise" / "__init__.py").write_text("from fabric.api import *\n")
 
     env = dict(os.environ)
     env["PYTHONPATH"] = str(fake_site)
@@ -144,7 +151,7 @@ def test_standalone_doctor_diagnoses_a_shadowing_package(tmp_path):
 
     out = r.stdout + r.stderr
     assert r.returncode != 0, "doctor must exit non-zero when something is wrong"
-    assert "weaver" in out
+    assert "hypothesise" in out
     assert "MISSING" in out or "BROKEN" in out or "shadow" in out.lower(), out
     assert "FIX" in out or "rm -rf" in out or "dev-setup" in out, (
         f"doctor must print an actionable fix, got:\n{out}")
@@ -152,11 +159,11 @@ def test_standalone_doctor_diagnoses_a_shadowing_package(tmp_path):
 
 def test_standalone_doctor_exists_and_imports_nothing_at_module_level():
     """It has to run when the package it diagnoses is broken, so it must not
-    import weaver to start up."""
+    import hypothesise to start up."""
     src = (ROOT / "scripts" / "doctor.py").read_text()
     head = src.split("def ")[0]
-    assert "import weaver" not in head, (
-        "scripts/doctor.py imports weaver at module level — it will die on the "
+    assert "import hypothesise" not in head, (
+        "scripts/doctor.py imports hypothesise at module level — it will die on the "
         "exact failure it exists to diagnose")
 
 

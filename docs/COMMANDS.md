@@ -1,4 +1,4 @@
-# Commands — run and test Weaver
+# Commands — run and test Hypothesise
 
 Every command here has been run and verified. Copy-paste ready.
 Run everything from the repo root: `/Volumes/Seagate/AI_Layer`
@@ -22,9 +22,9 @@ bash scripts/dev-setup.sh
 source .venv/bin/activate
 ```
 
-> **Do not run `pip install weaver`.** Nothing is published, and that name
-> belongs to an unrelated package on PyPI (ADR-030). It installs a stranger's
-> code and gives you no `weaver` command.
+> **Nothing is published yet.** To use it as a user would, install from the
+> checkout: `uv tool install /Volumes/Seagate/AI_Layer`, then `hypothesise init`.
+> The steps below are the development setup.
 
 The script **creates a virtualenv at `.venv`** and installs everything into it.
 
@@ -45,21 +45,21 @@ command.
 After activating, one command does everything:
 
 ```bash
-weaver --help
-weaver api --demo                                    # dashboard on :8080
-weaver proxy --config weaver.config.json --detect    # MCP interception
-weaver migrate --check                               # schema state
-weaver doctor                                        # diagnose the environment
+hypothesise --help
+hypothesise api --demo                                    # dashboard on :8080
+hypothesise proxy --config hypothesise.config.json --detect    # MCP interception
+hypothesise migrate --check                               # schema state
+hypothesise doctor                                        # diagnose the environment
 pytest
 ```
 
 Or skip activation and name the interpreter. Use *your* environment's path —
-`weaver doctor` prints it, and it is not necessarily `./.venv` (on a shared
+`hypothesise doctor` prints it, and it is not necessarily `./.venv` (on a shared
 drive that directory may have been created by another machine, ADR-032):
 
 ```bash
 /path/to/your/env/bin/python -m pytest
-/path/to/your/env/bin/python -m weaver api --demo
+/path/to/your/env/bin/python -m hypothesise api --demo
 ```
 
 ### Options
@@ -88,7 +88,7 @@ Three causes account for nearly everything:
 | What you see | Cause | Fix |
 |---|---|---|
 | `externally-managed-environment` | system Python, PEP 668 | `bash scripts/dev-setup.sh` (makes a venv) |
-| setup succeeds, then `No module named weaver_api` | venv not activated, or a different `python3` | `source .venv/bin/activate` |
+| setup succeeds, then `No module named hypothesise_api` | venv not activated, or a different `python3` | `source .venv/bin/activate` |
 | `PYTHON="$(command -v python3)"` returns `alias python3=...` | `python3` is a shell alias | `PYTHON="$(python3 -c 'import sys; print(sys.executable)')" bash scripts/dev-setup.sh` |
 
 **Tests need none of this.** `pyproject.toml` sets `pythonpath`, so `pytest`
@@ -155,7 +155,7 @@ Two MCP servers both numbering responses from `id:1`. Caught a real routing bug.
 ```bash
 ruff check packages scripts tests          # lint
 ruff check --fix packages scripts tests    # autofix
-mypy packages/core/weaver_core             # types (engine only — it must be sound)
+mypy packages/core/hypothesise_core             # types (engine only — it must be sound)
 ```
 
 Expected: `All checks passed!` and `Success: no issues found in 12 source files`
@@ -322,7 +322,7 @@ so the proxy classifies the error text:
 | `permission denied`, `forbidden`, `EACCES`, `unauthorized` | `DENIED` | a refusal |
 | `no such file`, `ENOENT`, `not found` | `ERROR` | an absence — agents probe for optional files constantly |
 
-Weaver's **own** BLOCK also counts as a denial. An agent we just blocked that
+Hypothesise's **own** BLOCK also counts as a denial. An agent we just blocked that
 immediately probes another route is the clearest evasion signal there is.
 
 > Nothing set `DENIED` at all until the red-team suite found it (ADR-020).
@@ -348,7 +348,7 @@ detector that never matched.
 ### Run the proxy WITH detection
 
 ```bash
-python3 -m weaver_proxy --config weaver.config.example.json --detect
+python3 -m hypothesise_proxy --config hypothesise.config.example.json --detect
 ```
 
 Without `--detect` the proxy records and decides nothing. With it, Tier-1 runs
@@ -392,20 +392,20 @@ curl -s localhost:8080/v1/detectors   # what's registered, and any that are cras
 ## 4d. The API and dashboard (M1)
 
 ```bash
-python3 -m weaver_api --demo
+python3 -m hypothesise_api --demo
 ```
 
 Starts on `http://127.0.0.1:8080` and loads the scenario suite so there is
 something to look at. Without `--demo` it starts empty and waits for events.
 
 ```bash
-python3 -m weaver_api                       # empty, waits for ingest
-python3 -m weaver_api --port 9000           # different port
-python3 -m weaver_api --db sqlite:///./x.db # different database
+python3 -m hypothesise_api                       # empty, waits for ingest
+python3 -m hypothesise_api --port 9000           # different port
+python3 -m hypothesise_api --db sqlite:///./x.db # different database
 ```
 
-The database defaults to `~/.weaver/weaver.db` — deliberately **not** in your
-project (ADR-013). Override with `WEAVER_HOME` or `--db`.
+The database defaults to `~/.hypothesise/hypothesise.db` — deliberately **not** in your
+project (ADR-013). Override with `HYPOTHESISE_HOME` or `--db`.
 
 ### The six screens
 
@@ -546,12 +546,12 @@ Adding attacks, and why every attack needs a benign counterpart:
 ### Policy rules
 
 Explicit operator intent, layered over behavioural scoring. Put them in
-`weaver.config.json`:
+`hypothesise.config.json`:
 
 ```json
 {
   "mcpServers": { "...": {} },
-  "weaver": {"mode": "observe", "apiUrl": "http://127.0.0.1:8080"},
+  "hypothesise": {"mode": "observe", "apiUrl": "http://127.0.0.1:8080"},
   "rules": [
     {"name": "confirm secret reads", "action": "ask",
      "reason": "credentials need a human",
@@ -595,12 +595,12 @@ An `ask` verdict in **enforce** mode suspends the agent's tool call, opens an
 approval, and waits.
 
 ```bash
-weaver-api --port 8080                                    # terminal 1
-weaver-proxy --config weaver.config.json --detect \
+hypothesise-api --port 8080                                    # terminal 1
+hypothesise-proxy --config hypothesise.config.json --detect \
              --api http://127.0.0.1:8080                  # terminal 2
 ```
 
-With `WEAVER_MODE=enforce`, the Approvals tab shows a live countdown and
+With `HYPOTHESISE_MODE=enforce`, the Approvals tab shows a live countdown and
 approve/deny buttons. The agent is genuinely blocked until you answer.
 
 ```bash
@@ -630,7 +630,7 @@ cost is real: keep `ask` rules rare and specific.
 ### Webhook
 
 ```bash
-weaver-api --webhook https://your-relay.example.com/hook
+hypothesise-api --webhook https://your-relay.example.com/hook
 ```
 
 Fires on `approval_requested` and `approval_decided`. Fire-and-forget — a dead
@@ -661,39 +661,39 @@ Env beats the config file, so you can flip one run without editing something
 that is in version control:
 
 ```bash
-WEAVER_MODE=enforce weaver-proxy --config weaver.config.json --detect --api http://127.0.0.1:8080
+HYPOTHESISE_MODE=enforce hypothesise-proxy --config hypothesise.config.json --detect --api http://127.0.0.1:8080
 ```
 
 | Variable | Overrides |
 |---|---|
-| `WEAVER_MODE` | `weaver.mode` |
-| `WEAVER_FAIL_MODE` | `weaver.failMode` |
-| `WEAVER_DECISION_BUDGET_MS` | `weaver.budgetMs` |
-| `WEAVER_API_URL` | `weaver.apiUrl` |
-| `WEAVER_HOME` | database location (default `~/.weaver`) |
-| `WEAVER_WEBHOOK` | `--webhook` |
+| `HYPOTHESISE_MODE` | `hypothesise.mode` |
+| `HYPOTHESISE_FAIL_MODE` | `hypothesise.failMode` |
+| `HYPOTHESISE_DECISION_BUDGET_MS` | `hypothesise.budgetMs` |
+| `HYPOTHESISE_API_URL` | `hypothesise.apiUrl` |
+| `HYPOTHESISE_HOME` | database location (default `~/.hypothesise`) |
+| `HYPOTHESISE_WEBHOOK` | `--webhook` |
 
 ---
 
 ## 5. Run the proxy
 
 ```bash
-python3 -m weaver_proxy --config weaver.config.example.json
+python3 -m hypothesise_proxy --config hypothesise.config.example.json
 ```
 
 It speaks MCP on stdio and waits for input. Startup line goes to stderr:
 
 ```
-weaver: mode=observe fail=open budget=50ms upstreams=1
+hypothesise: mode=observe fail=open budget=50ms upstreams=1
 ```
 
 ### Ship events to the dashboard
 
 ```bash
-weaver-proxy --config weaver.config.json --detect --api http://127.0.0.1:8080
+hypothesise-proxy --config hypothesise.config.json --detect --api http://127.0.0.1:8080
 ```
 
-On startup the proxy prints `weaver: shipping events to ...` on stderr. No line
+On startup the proxy prints `hypothesise: shipping events to ...` on stderr. No line
 means `apiUrl` is unset and events stay in memory — which is what "the
 dashboard is empty" almost always means.
 
@@ -709,21 +709,21 @@ printf '%s\n%s\n%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"my-agent","version":"1"}}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"file:///app/.env"}}}' \
-  | python3 -m weaver_proxy --config weaver.config.example.json
+  | python3 -m hypothesise_proxy --config hypothesise.config.example.json
 ```
 
 Expected:
 
 ```
-{"jsonrpc":"2.0","id":1,"result":{...,"serverInfo":{"name":"weaver-proxy","version":"0.1.0"}}}
+{"jsonrpc":"2.0","id":1,"result":{...,"serverInfo":{"name":"hypothesise-proxy","version":"0.1.0"}}}
 {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"read_file",...},...]}}
 {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"fs-mcp:read_file:ok"}]}}
 ```
 
 ### Config
 
-`weaver.config.json` takes the same `mcpServers` block your MCP client already
-has — adopting Weaver is moving a block of JSON, not learning a format.
+`hypothesise.config.json` takes the same `mcpServers` block your MCP client already
+has — adopting Hypothesise is moving a block of JSON, not learning a format.
 
 ```json
 {
@@ -731,7 +731,7 @@ has — adopting Weaver is moving a block of JSON, not learning a format.
     "github-mcp":   {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"]},
     "fs-mcp":       {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/you/code"]}
   },
-  "weaver": {
+  "hypothesise": {
     "mode": "observe",
     "failMode": "open",
     "budgetMs": 50,
@@ -759,25 +759,25 @@ Env vars override the file — see the table in section 4f.
 > Full test plan with pass/fail criteria: **`docs/TESTING.md`**
 
 There is no production traffic to learn from (ADR-010), and this is the
-cheapest fix: put Weaver in front of your own Claude Code or Cursor session.
+cheapest fix: put Hypothesise in front of your own Claude Code or Cursor session.
 
-1. Copy your `mcpServers` block into `weaver.config.json`
-2. Point your MCP client at Weaver instead:
+1. Copy your `mcpServers` block into `hypothesise.config.json`
+2. Point your MCP client at Hypothesise instead:
 
 ```json
 {
   "mcpServers": {
-    "weaver": {
+    "hypothesise": {
       "command": "/absolute/path/to/your/env/bin/python3",
-      "args": ["-m", "weaver", "proxy",
-               "--config", "/Volumes/Seagate/AI_Layer/weaver.config.json",
+      "args": ["-m", "hypothesise", "proxy",
+               "--config", "/Volumes/Seagate/AI_Layer/hypothesise.config.json",
                "--detect", "--api", "http://127.0.0.1:8080"]
     }
   }
 }
 ```
 
-An **absolute** interpreter path, not bare `python3` and not `bin/weaver`: MCP
+An **absolute** interpreter path, not bare `python3` and not `bin/hypothesise`: MCP
 clients launch the command with none of your shell's environment, so nothing is
 on PATH and no venv is active. ADR-032.
 
@@ -789,13 +789,13 @@ python3 scripts/ops/check-client-config.py <that config> --fix   # write it corr
 python3 scripts/ops/check-client-config.py <that config>         # verify it
 ```
 
-Run that with the interpreter that has Weaver installed. `--fix` rewrites every
-weaver entry to use the interpreter running it, so it cannot name the wrong one.
+Run that with the interpreter that has Hypothesise installed. `--fix` rewrites every
+hypothesise entry to use the interpreter running it, so it cannot name the wrong one.
 The plain run resolves the command, confirms it is executable and built for this
-platform, runs `weaver version` through it, parses the `--config` file, and
+platform, runs `hypothesise version` through it, parses the `--config` file, and
 connects to `--api`.
 
-4. Work normally. Every tool call flows through Weaver in observe mode.
+4. Work normally. Every tool call flows through Hypothesise in observe mode.
 
 Real traffic, available now, costs nothing. Start this before M2 — the
 detectors get tuned against whatever traffic exists.
@@ -818,23 +818,23 @@ git status --short
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ModuleNotFoundError: weaver_core` | not installed | `bash scripts/dev-setup.sh` |
+| `ModuleNotFoundError: hypothesise_core` | not installed | `bash scripts/dev-setup.sh` |
 | ruff errors in `._test_x.py` | macOS resource forks on the Seagate drive | `find . -name '._*' -not -path './.git/*' -delete` |
 | proxy hangs with no output | normal — it waits on stdin | pipe it JSON, or Ctrl-C |
 | `upstream X failed to start` | bad command in config | check `command`/`args`; the proxy keeps running without it |
 | replay says `FAIL` | no detectors yet | correct until M2 |
 | `pip install -e .` errors | you want the script | `bash scripts/dev-setup.sh` |
-| `attempt to write a readonly database` | SQLite on a removable/network volume | the default is `~/.weaver` now; set `WEAVER_HOME` if needed |
+| `attempt to write a readonly database` | SQLite on a removable/network volume | the default is `~/.hypothesise` now; set `HYPOTHESISE_HOME` if needed |
 | `no such table: events` | in-memory SQLite, one DB per connection | fixed via StaticPool; re-pull if you see it |
 | `PYTHON="$(command -v python3)"` fails | `python3` is a shell **alias** | `PYTHON="$(python3 -c 'import sys; print(sys.executable)')" bash scripts/dev-setup.sh` |
 | setup says OK but import fails | `pip` and `python3` are different Pythons | `python3 scripts/doctor.py`, then `PYTHON="$(command -v python3)" bash scripts/dev-setup.sh` |
 | tests pass but imports fail | expected — pytest uses `pythonpath`, not the install | only matters outside the repo |
-| dashboard stays empty | proxy has no `--api` / `apiUrl` | check stderr for `weaver: shipping events to ...` |
-| `enforce mode needs a control plane` | enforce with no `apiUrl` | start `weaver-api`, pass `--api` |
+| dashboard stays empty | proxy has no `--api` / `apiUrl` | check stderr for `hypothesise: shipping events to ...` |
+| `enforce mode needs a control plane` | enforce with no `apiUrl` | start `hypothesise-api`, pass `--api` |
 | an agent hangs ~2 min then fails | an `ask` rule with nobody approving | answer in the Approvals tab, or make the rule narrower |
-| approvals show `unknown` agent | control plane unreachable when the request opened | check `weaver-api` is up |
-| MCP client says `server exited` / no weaver tools | `command` in the client config is wrong for this machine | `python3 scripts/ops/check-client-config.py <config>` |
-| `bin/weaver` in the config does not exist | that venv was built elsewhere — on a shared drive, likely by another OS | `check-client-config.py <config> --fix` (ADR-032) |
+| approvals show `unknown` agent | control plane unreachable when the request opened | check `hypothesise-api` is up |
+| MCP client says `server exited` / no hypothesise tools | `command` in the client config is wrong for this machine | `python3 scripts/ops/check-client-config.py <config>` |
+| `bin/hypothesise` in the config does not exist | that venv was built elsewhere — on a shared drive, likely by another OS | `check-client-config.py <config> --fix` (ADR-032) |
 
 ---
 
@@ -845,12 +845,12 @@ bash scripts/dev-setup.sh                       # install
 python3 scripts/doctor.py                       # diagnose import problems
 pytest                                          # 175 tests
 ruff check packages scripts tests               # lint
-mypy packages/core/weaver_core                  # types
+mypy packages/core/hypothesise_core                  # types
 python3 scripts/replay.py --all --quiet         # eval suite (exit 0 = criteria met)
 python3 scripts/ops/check-client-config.py PATH  # validate an MCP client config
 python3 scripts/ops/check-client-config.py PATH --fix   # and repair it
-python3 -m weaver_proxy --config weaver.config.example.json --detect --api http://127.0.0.1:8080
-python3 -m weaver_api --demo                    # dashboard on :8080
+python3 -m hypothesise_proxy --config hypothesise.config.example.json --detect --api http://127.0.0.1:8080
+python3 -m hypothesise_api --demo                    # dashboard on :8080
 python3 scripts/doctor.py                       # diagnose import problems
 ```
 

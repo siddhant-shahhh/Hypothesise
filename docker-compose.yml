@@ -4,16 +4,16 @@
 #   docker compose up -d          SQLite, data in a named volume
 #   docker compose --profile postgres up -d
 services:
-  weaver-api:
+  hypothesise-api:
     build: .
-    image: weaver:0.1.0
+    image: hypothesise:0.1.0
     ports:
       - "127.0.0.1:8080:8080"   # localhost only: no auth yet (ADR-009)
     volumes:
-      - weaver-data:/data
+      - hypothesise-data:/data
     environment:
-      WEAVER_HOME: /data
-      # WEAVER_WEBHOOK: https://your-relay.example.com/hook
+      HYPOTHESISE_HOME: /data
+      # HYPOTHESISE_WEBHOOK: https://your-relay.example.com/hook
     restart: unless-stopped
 
   # Optional Postgres. Untested against a real server (ADR-028) — the switch
@@ -22,22 +22,22 @@ services:
     profiles: ["postgres"]
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: weaver
-      POSTGRES_USER: weaver
+      POSTGRES_DB: hypothesise
+      POSTGRES_USER: hypothesise
       POSTGRES_PASSWORD: change-me
     volumes:
-      - weaver-pg:/var/lib/postgresql/data
+      - hypothesise-pg:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U weaver"]
+      test: ["CMD-SHELL", "pg_isready -U hypothesise"]
       interval: 10s
       retries: 5
 
-  weaver-api-postgres:
+  hypothesise-api-postgres:
     profiles: ["postgres"]
     build: .
-    image: weaver:0.1.0
+    image: hypothesise:0.1.0
     command: ["api", "--host", "0.0.0.0", "--port", "8080",
-              "--db", "postgresql+psycopg://weaver:change-me@postgres:5432/weaver"]
+              "--db", "postgresql+psycopg://hypothesise:change-me@postgres:5432/hypothesise"]
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
@@ -46,5 +46,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  weaver-data:
-  weaver-pg:
+  hypothesise-data:
+  hypothesise-pg:

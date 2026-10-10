@@ -7,8 +7,8 @@ hosts not counting as egress.
 """
 
 import pytest
-from weaver_core.classify import classify_action, classify_resource
-from weaver_core.events import Action, ResourceClass
+from hypothesise_core.classify import classify_action, classify_resource
+from hypothesise_core.events import Action, ResourceClass
 
 
 @pytest.mark.parametrize(

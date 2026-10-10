@@ -3,12 +3,12 @@
 #
 # The fake-secret FILES live in the repo at testbed/. The SQLite database does
 # not: SQLite fails with "disk I/O error" on this external drive, the same
-# constraint that put the main database in ~/.weaver (ADR-013). So the database
+# constraint that put the main database in ~/.hypothesise (ADR-013). So the database
 # goes in your home directory and the MCP server is pointed at it there.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 REPO="$(pwd)"
-DB_DIR="$HOME/weaver-testbed"
+DB_DIR="$HOME/hypothesise-testbed"
 DB="$DB_DIR/devdata.db"
 
 mkdir -p "$DB_DIR"
@@ -53,7 +53,7 @@ python3 - "$REPO" "$DB" <<'PY'
 import json, sys
 from pathlib import Path
 repo, db = sys.argv[1], sys.argv[2]
-cfg = Path(repo) / "weaver.config.json"
+cfg = Path(repo) / "hypothesise.config.json"
 data = json.loads(cfg.read_text()) if cfg.exists() else {}
 data.setdefault("mcpServers", {})
 data["mcpServers"]["fs"] = {
@@ -64,7 +64,7 @@ data["mcpServers"]["db"] = {
     "command": "npx",
     "args": ["-y", "mcp-server-sqlite-npx", db],
 }
-data["weaver"] = {
+data["hypothesise"] = {
     "mode": "observe", "failMode": "open", "budgetMs": 50,
     "apiUrl": "http://127.0.0.1:8080", "agentId": "copilot",
 }
@@ -75,7 +75,7 @@ PY
 cat <<MSG
 
 Next:
-    1. weaver api                      (leave running)
+    1. hypothesise api                      (leave running)
     2. reload VS Code, start a Copilot agent chat
     3. work through docs/TEST-RUN.md
 

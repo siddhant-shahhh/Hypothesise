@@ -5,15 +5,15 @@ handler is duck-typed on the hook names LangChain dispatches to.
 """
 
 import pytest
-from weaver_core.engine import Engine
-from weaver_core.events import ResourceClass, Status
-from weaver_core.policy.rules import RuleSet
-from weaver_langgraph import ToolBlocked, WeaverCallbackHandler
+from hypothesise_core.engine import Engine
+from hypothesise_core.events import ResourceClass, Status
+from hypothesise_core.policy.rules import RuleSet
+from hypothesise_langgraph import HypothesiseCallbackHandler, ToolBlocked
 
 
 def _handler(**kw):
     seen = []
-    h = WeaverCallbackHandler(engine=kw.pop("engine", Engine()),
+    h = HypothesiseCallbackHandler(engine=kw.pop("engine", Engine()),
                               on_event=seen.append, **kw)
     return h, seen
 
@@ -112,7 +112,7 @@ def test_a_failing_emitter_never_breaks_the_graph():
     def boom(_ev):
         raise RuntimeError("telemetry down")
 
-    h = WeaverCallbackHandler(engine=Engine(), on_event=boom)
+    h = HypothesiseCallbackHandler(engine=Engine(), on_event=boom)
     h.on_tool_start({"name": "read_file"}, None, run_id="r1",
                     inputs={"path": "/app/x.py"})
     h.on_tool_end("", run_id="r1")     # must not raise

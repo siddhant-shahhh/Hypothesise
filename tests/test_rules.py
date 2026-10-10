@@ -5,8 +5,8 @@ and allow can never override a CRITICAL detector.
 """
 
 
-from weaver_core.events import Event, Resource, ResourceClass, Tool, Verdict
-from weaver_core.policy.rules import Rule, RuleSet, describe
+from hypothesise_core.events import Event, Resource, ResourceClass, Tool, Verdict
+from hypothesise_core.policy.rules import Rule, RuleSet, describe
 
 
 def _ev(server="shell-mcp", name="exec", uri="file:///app/.env",
@@ -97,7 +97,7 @@ def test_describe_is_human_readable():
 
 
 def test_engine_applies_rules(tmp_path):
-    from weaver_core.engine import Engine
+    from hypothesise_core.engine import Engine
 
     eng = Engine(rules=RuleSet.from_config([
         {"name": "freeze", "action": "block", "reason": "release freeze",

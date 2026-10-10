@@ -4,9 +4,9 @@
     python3 scripts/doctor.py
 
 **This is the standalone copy, and it is the one that survives.** A second copy
-ships inside the `weaver` package as `weaver doctor`, which is more convenient
-but cannot help when `weaver` itself is the thing that is broken — the CLI has
-to import the package to run. So nothing here imports weaver at module level.
+ships inside the `hypothesise` package as `hypothesise doctor`, which is more convenient
+but cannot help when `hypothesise` itself is the thing that is broken — the CLI has
+to import the package to run. So nothing here imports hypothesise at module level.
 
 It reports which interpreter is running, whether it is a virtualenv, whether it
 is externally managed (PEP 668), where each package resolved from, whether
@@ -27,9 +27,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 VENV = REPO / ".venv"
 
-# `weaver` first: it is the one with a PyPI name collision (ADR-030) and so the
-# one most likely to be shadowed.
-PKGS = ["weaver", "weaver_core", "weaver_store", "weaver_proxy", "weaver_api"]
+# `hypothesise` first: the top-level package is the one a stale or foreign
+# install is most likely to shadow (ADR-031).
+PKGS = ["hypothesise", "hypothesise_core", "hypothesise_store", "hypothesise_proxy", "hypothesise_api"]
 
 
 def in_venv() -> bool:
@@ -94,8 +94,8 @@ def foreign_venv(venv: Path) -> str | None:
     if home and ver and not (Path(home) / f"python{ver}").exists():
         return f"built against Python {ver} in {home}, which is not there"
 
-    if not (venv / "bin" / "weaver").exists():
-        return "has no `weaver` in bin/ — nothing was installed into it here"
+    if not (venv / "bin" / "hypothesise").exists():
+        return "has no `hypothesise` in bin/ — nothing was installed into it here"
 
     return None
 
@@ -110,7 +110,7 @@ def site_dir_of(path: str) -> Path | None:
 
 def main() -> int:
     print("=" * 70)
-    print("WEAVER DOCTOR")
+    print("HYPOTHESISE DOCTOR")
     print("=" * 70)
 
     print("\n[interpreter]")
@@ -157,7 +157,7 @@ def main() -> int:
     print("  A client launches its server with no PATH and no activated venv,")
     print("  so the config must name an absolute interpreter and use -m:")
     print(f'      "command": "{sys.executable}",')
-    print('      "args": ["-m", "weaver", "proxy", "--config", "...", "--detect"]')
+    print('      "args": ["-m", "hypothesise", "proxy", "--config", "...", "--detect"]')
     print("  Write or check one without editing by hand:")
     print(f"      {sys.executable} scripts/ops/check-client-config.py <config> --fix")
 
@@ -199,13 +199,12 @@ def main() -> int:
             print(f"    {name:<14} {where}")
 
         site = site_dir_of(outside_repo[0][1])
-        print("\n  For `weaver` this is almost certainly the unrelated package of")
-        print("  the same name on PyPI (ADR-030). `pip uninstall weaver` removes")
-        print("  its metadata but leaves the directory, and a real directory in")
-        print("  site-packages beats an editable install's path entry.")
+        print("\n  This is a stale or foreign copy of `hypothesise`. `pip uninstall`")
+        print("  can remove its metadata but leave the directory, and a real")
+        print("  directory in site-packages beats an editable install's path entry.")
         print("\n  FIX")
         if site:
-            print(f"      rm -rf {site / 'weaver'} {site}/weaver-*.dist-info")
+            print(f"      rm -rf {site / 'hypothesise'} {site}/hypothesise-*.dist-info")
         print("      bash scripts/dev-setup.sh")
 
     print("\n" + "=" * 70)
@@ -222,7 +221,7 @@ def main() -> int:
             print("  Packages are probably in .venv but you are not using it:\n")
             print(f"      source {VENV}/bin/activate\n")
             print("  Or run directly:\n")
-            print(f"      {VENV / 'bin' / 'python'} -m weaver api --demo\n")
+            print(f"      {VENV / 'bin' / 'python'} -m hypothesise api --demo\n")
         else:
             print("  Install into the environment you are using right now:\n")
             print("      bash scripts/dev-setup.sh --here\n")

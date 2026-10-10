@@ -1,13 +1,17 @@
-# The shippable distribution: one `pip install weaver` gives users everything
-# and one command to learn (ADR-027). The internal split under packages/ stays
-# for ADR-005 and the ownership carve-out (ADR-007) — users just never see it.
+# The shippable distribution: `uv tool install hypothesise` (or pipx / pip) gives
+# users everything and one command to learn (ADR-027, ADR-034). The internal split
+# under packages/ stays for ADR-005 and the ownership carve-out (ADR-007) — users
+# just never see it. License stays UNLICENSED until ADR-007 closes: set it
+# before the first upload, because a public upload cannot be taken back.
 [project]
-name = "weaver"
-version = "0.1.0"
-description = "Behavioural security layer for AI agents — learns what each agent normally does, detects dangerous deviations, and controls their autonomy"
+name = "hypothesise"
+version = "0.1.0a1"
+description = "Behavioural security layer for AI agents — watches every tool call your agents make, learns what normal looks like, and flags dangerous deviations"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "UNLICENSED" }
+authors = [{ name = "Siddhant Shah" }]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 keywords = ["ai", "agents", "security", "mcp", "observability", "llm"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -17,6 +21,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Security",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Console",    "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
     "sqlalchemy>=2.0",
@@ -24,6 +32,11 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
 ]
+
+[project.urls]
+Homepage = "https://github.com/siddhant-shahhh/Hypothesise"
+Repository = "https://github.com/siddhant-shahhh/Hypothesise"
+Issues = "https://github.com/siddhant-shahhh/Hypothesise/issues"
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
@@ -34,32 +47,43 @@ dev = [
 ]
 
 [project.scripts]
-weaver = "weaver.__main__:main"
+hypothesise = "hypothesise.__main__:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 # One wheel, assembled from the internal packages. Each stays importable under
 # its own name so nothing in the codebase has to know about this.
 [tool.hatch.build.targets.wheel]
 packages = [
-    "packages/cli/weaver",
-    "packages/core/weaver_core",
-    "packages/store/weaver_store",
-    "packages/proxy/weaver_proxy",
-    "packages/api/weaver_api",
-    "packages/adapters/langgraph/weaver_langgraph",
+    "packages/cli/hypothesise",
+    "packages/core/hypothesise_core",
+    "packages/store/hypothesise_store",
+    "packages/proxy/hypothesise_proxy",
+    "packages/api/hypothesise_api",
+    "packages/adapters/langgraph/hypothesise_langgraph",
 ]
+exclude = ["**/._*", "**/__pycache__", "**/*.pyc", "**/.DS_Store"]
+
+# The scenario suite powers `hypothesise api --demo`. Without it an installed
+# copy shows an empty demo: demo.find_scenarios() looks beside the package.
+[tool.hatch.build.targets.wheel.force-include]
+"scenarios/attack" = "hypothesise_api/scenarios/attack"
+"scenarios/benign" = "hypothesise_api/scenarios/benign"
 
 [tool.hatch.build.targets.sdist]
-include = [
-    "packages/", "scenarios/", "redteam/", "scripts/", "tests/", "docs/",
-    "README.md", "CLAUDE.md", "pyproject.toml", "weaver.config.example.json",
-]
+# What a user needs to build the wheel — nothing else. Tests, docs, red team
+# and scripts stay in the repo.
+include = ["/packages", "/scenarios", "/README.md", "/pyproject.toml"]
+exclude = ["**/._*", "**/__pycache__", "**/*.pyc", "**/.DS_Store", "**/*.db"]
 
 [tool.uv.workspace]
-members = ["packages/*"]
+# Listed, not globbed: `packages/*` matches packages/adapters, which is a
+# folder of adapters rather than a package, and uv then refuses every command
+# — including `uv tool install` from a checkout.
+members = ["packages/cli", "packages/core", "packages/store", "packages/proxy",
+           "packages/api", "packages/adapters/langgraph"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

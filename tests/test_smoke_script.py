@@ -15,7 +15,7 @@ SCRIPT = REPO / "scripts" / "ops" / "smoke.py"
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("weaver_smoke", SCRIPT)
+    spec = importlib.util.spec_from_file_location("hypothesise_smoke", SCRIPT)
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -66,7 +66,7 @@ def test_missing_config_exits_nonzero(tmp_path, capsys):
 
 
 def test_unparseable_config_exits_nonzero(tmp_path, capsys):
-    bad = tmp_path / "weaver.config.json"
+    bad = tmp_path / "hypothesise.config.json"
     bad.write_text("{ not json")
     assert smoke.main(["--config", str(bad)]) == 1
     assert "not valid JSON" in capsys.readouterr().out
@@ -74,19 +74,19 @@ def test_unparseable_config_exits_nonzero(tmp_path, capsys):
 
 def test_unreachable_control_plane_is_reported_before_anything_is_launched(
         tmp_path, capsys):
-    cfg = tmp_path / "weaver.config.json"
+    cfg = tmp_path / "hypothesise.config.json"
     cfg.write_text(json.dumps({"mcpServers": {}}))
     # Port 1 is reserved and never listening.
     assert smoke.main(["--config", str(cfg), "--api", "http://127.0.0.1:1"]) == 1
     out = capsys.readouterr().out
     assert "control plane unreachable" in out
-    assert "weaver api" in out
+    assert "hypothesise api" in out
 
 
-def test_the_script_imports_nothing_from_weaver():
+def test_the_script_imports_nothing_from_hypothesise():
     """It launches the CLI as a subprocess, the way a client does — so it must
     not depend on importing the package itself."""
     for line in SCRIPT.read_text().splitlines():
         stripped = line.strip()
         if stripped.startswith(("import ", "from ")):
-            assert "weaver" not in stripped, line
+            assert "hypothesise" not in stripped, line

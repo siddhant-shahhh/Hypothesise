@@ -844,3 +844,187 @@ distribution names; the console script; `WEAVER_HOME` and `~/.weaver`; the
 readers to look for; and a migration or documented manual step for the existing
 database path. `scripts/ops/check-client-config.py --fix` already rewrites
 client configs, so that part is covered.
+
+---
+
+### ADR-034 — Renamed to Hypothesise; distributed as a CLI tool
+**Date:** 2026-10-07 · **Status:** accepted · supersedes the *name* in ADR-033
+
+*Decision.* The product and the code are both **Hypothesise**. The distribution,
+the console script and every package are renamed: `hypothesise`,
+`hypothesise_core`, `hypothesise_store`, `hypothesise_proxy`, `hypothesise_api`,
+`hypothesise_langgraph`. `hypothesise` was free on PyPI on 2026-10-07.
+
+ADR-033's checklist, item by item:
+
+| Item | Done |
+|---|---|
+| package directories and distribution names | renamed |
+| console script | `hypothesise` |
+| `WEAVER_*` env vars, `~/.weaver` | now `HYPOTHESISE_*`, `~/.hypothesise` — old names are **not** read |
+| `"weaver"` key in the config file | renamed; the old key is still accepted |
+| database path | manual: `mv ~/.weaver ~/.hypothesise && mv ~/.hypothesise/weaver.db ~/.hypothesise/hypothesise.db` |
+| client configs naming `-m weaver` | `init` refuses to wrap them; remove the entry and re-run `hypothesise init` |
+
+*Spelling.* British `-ise`, matching the brand. `hypothesize` (US) is an
+unrelated statistics package on PyPI and `hypothesis` is a widely used testing
+library; the README warns about both. The landing page in `Claude outputs/`
+still says `pip install hypothesize-agent` and needs updating separately.
+
+*Distribution.* Users install it as a tool — `uv tool install hypothesise` or
+`pipx install hypothesise` — into its own environment. Plain `pip install`
+works inside a virtualenv, but on Homebrew Python and most Linux distributions
+the system interpreter refuses it (PEP 668, ADR-014), so the README leads with
+the tool installers. The license stays `UNLICENSED` until ADR-007 closes.
+
+*Packaging fixes found while building it for real:* the uv workspace globbed
+`packages/*`, which matched `packages/adapters` (not a package) and made **every
+uv command fail**, including `uv tool install` from a checkout; the sdist's
+unanchored include patterns swept in `.kilo/` and `redteam/`; and the wheel did
+not contain the scenario suite, so `hypothesise api --demo` was empty for
+anyone who installed it. All three fixed and pinned by `test_packaging.py`.
+
+---
+
+### ADR-035 — Local-first: proxies and hooks spool; the dashboard is optional
+**Date:** 2026-10-07 · **Status:** accepted · amends ADR-015
+
+*Problem.* With no `apiUrl`, the proxy decided inline and then threw the event
+away. Anyone who installed the tool and did not keep `hypothesise api` running
+recorded nothing, and an always-on dashboard is not something people do.
+
+*Decision.* With no control plane configured, events go to an append-only
+JSON-lines spool in `~/.hypothesise/spool/` under a short cross-process lock
+(fcntl on POSIX, msvcrt on Windows). The dashboard reads it on start and every
+two seconds, through the same `ingest()` as `POST /v1/events`
+(`hypothesise_store/ingest.py`), so a spooled event and a shipped event are
+decided identically.
+
+*Why a file and not SQLite.* Many short-lived writers — one proxy per wrapped
+server per app, one hook process per Claude Code tool call — and SQLite locking
+is unreliable on the removable and network volumes this very repo lives on.
+Appending a line is the cheapest write that is safe from all of them, and it
+needs only the standard library, which keeps the hook at ~55 ms.
+
+*Guarantees kept.* Never on the request path (a background task, like the
+shipper). Bounded (200 MB, then drop). Never raises. The reader commits its
+offset only after ingest, so a crash re-reads instead of losing; a half-written
+trailing line is left for the next read; duplicates are skipped by event id.
+
+---
+
+### ADR-036 — `hypothesise init`: wrap MCP servers in place; hook Claude Code
+**Date:** 2026-10-07 · **Status:** accepted · supersedes the single-proxy client setup in ADR-032 for end users
+
+*Problem.* Setup meant moving a client's `mcpServers` into
+`hypothesise.config.json` and pointing the client at one proxy. That renames
+every tool (`mcp__hypothesise__create_issue` instead of
+`mcp__github__create_issue`), breaks permission allowlists written against
+the old names, loses VS Code's `${input:...}` substitution, and is a manual
+JSON edit per app — too much for anyone who is not us.
+
+*Decision — Claude Desktop, Cursor, VS Code.* Each stdio server entry is
+wrapped where it is: same key, same env, same type; only the command changes to
+`<python> -m hypothesise wrap --client C --server S -- <original command>`.
+Names do not change, the app still substitutes its own variables, and the
+original command rides along after `--`, so `uninstall` needs no saved state.
+Files are backed up first and written atomically; a file with comments (JSONC)
+is reported and left alone; remote http/sse servers are listed and skipped.
+
+All servers wrapped for one app share a session id derived from the app's
+process id, so the dashboard sees cross-server chains as one session. The
+inline engine runs per server, so such a chain is **caught in the dashboard,
+not blocked live** — stated plainly in the README.
+
+*Decision — Claude Code.* Not wrapped. A PostToolUse hook in
+`~/.claude/settings.json` sees built-in tools (Bash, Read, Edit, WebFetch) *and*
+MCP tools under Claude's own session id — strictly more than wrapping, and the
+only way to see the built-ins at all. Observe-only, exit 0 always.
+
+*Failure behaviour.* If the wrapper cannot start, it runs the original server
+unwrapped: a broken security layer costs its protection, not the user's tool.
+Enforce mode with no control plane downgrades to observe with a warning rather
+than refusing to start — refusing would take the user's server down with it.
+
+*Interpreter.* Entries name the interpreter of the installed tool. `init`
+refuses to run from a temporary one (`uvx`, `pipx run`), which would vanish on
+the next cache clean and break every wrapped server.
+
+---
+
+### ADR-037 — Two ways to connect, both first-class: the proxy entry and `init`
+**Date:** 2026-10-07 · **Status:** accepted · amends ADR-036
+
+*Problem.* ADR-036 made `init` the way in, and treated the original setup — one
+hand-written entry, `python -m hypothesise proxy --config hypothesise.config.json
+--detect --api http://127.0.0.1:8080`, fronting several servers and shipping
+live to the dashboard — as something to remove. That was the setup the `uris`
+dogfood run actually used, and the one that showed threat levels live. Losing
+it was a regression.
+
+*Decision.* Both are supported, side by side, even in one config file:
+
+| | Proxy entry (original) | `init` (wrapped in place) |
+|---|---|---|
+| Written by | hand, or `scripts/ops/check-client-config.py` | `hypothesise init` |
+| Shape | one server named e.g. `hypothesise`, tools of every upstream | each server keeps its own name |
+| Events | live to the dashboard (`--api`) | spool, read by the dashboard |
+| Dashboard down | spooled, not dropped (`Shipper.spool_fallback`) | spooled |
+| Cross-server chains | caught **inline** — one engine sees every upstream | caught in the dashboard |
+| Approvals / enforce | yes | needs `HYPOTHESISE_API_URL` |
+
+*What `init` does with proxy entries.* A current one (`-m hypothesise proxy`,
+`-m hypothesise_proxy`, or the console scripts) is recognised as connected and
+left alone; `status` lists it; `uninstall` never removes it. A pre-rename one
+(`-m weaver …`, `-m weaver_proxy`, `weaver`/`weaver-proxy` scripts) is
+**upgraded in place**: module renamed, `weaver.config.json` pointed at
+`hypothesise.config.json` when that exists, interpreter kept if it can import
+`hypothesise` and replaced with init's own otherwise (ADR-032).
+
+*Compatibility kept at the edges.* `--config weaver.config.json` finds
+`hypothesise.config.json` beside it (and vice versa); the `"weaver"` key in a
+config file is still read; and the first run copies `~/.weaver/weaver.db` to
+`~/.hypothesise/hypothesise.db` if the new one does not exist — copied, never
+moved, never overwriting — so earlier dashboard history survives the rename.
+
+---
+
+### ADR-038 — A Copilot agent hook for the tools VS Code will not let you turn off
+**Date:** 2026-10-07 · **Status:** accepted · amends ADR-036
+
+*Finding from the first uris run after the rename.* Copilot answered "read the
+env file" with its built-in `view` tool. In VS Code's tool picker the Copilot
+built-ins (`view`, `bash`, `create`, `edit`, `apply_patch`…) are marked
+**Always Available** — they cannot be unticked — and they never touch MCP. So
+the most natural prompts produced no events at all, while database questions
+(no built-in SQL tool) always did.
+
+*Decision.* VS Code has agent hooks with the same PostToolUse payload as
+Claude Code (`session_id`, `tool_name`, `tool_input`, `tool_response`). `init`
+writes a user-level `~/.copilot/hooks/hypothesise.json` running
+`<python> -m hypothesise hook vscode`; `uninstall` deletes it. The receiver is
+the Claude Code one with a tool-name table for Copilot's names, current and
+older (`view`/`read_file`, `bash`/`run_in_terminal`, `fetch_webpage`…). Events
+record as agent `copilot`, session `vs-<chat session>`.
+
+*No double counting.* Copilot's MCP calls (`mcp_…`) are skipped by the hook —
+they already pass through the wrapped servers or the proxy entry.
+
+*Caveats.* VS Code hooks are a preview feature behind `chat.useHooks` (on by
+default). Copilot's `view` argument shape is inferred, not documented; the
+first real run should confirm the resource column is filled. Cursor has no
+equivalent, so its built-ins remain invisible.
+
+---
+
+### ADR-039 — Ownership: Siddhant owns the code and the PyPI project
+**Date:** 2026-10-08 · **Status:** accepted · resolves ADR-007
+
+The code lives at `github.com/siddhant-shahhh/Hypothesise` and is published to
+PyPI as `hypothesise` from Siddhant's account, via trusted publishing from that
+repo (`docs/DEPLOY-PYPI.md`). Contributors push through his repo; Siddhant is
+the PyPI *Owner* and approves releases through the `pypi` GitHub environment.
+
+Still open: the **license** (`pyproject.toml` says `UNLICENSED`). It is now
+Siddhant's call and must be set before the first upload, because an upload is
+permanent.

@@ -1,13 +1,13 @@
 # Architecture — Agent Immune System
 
-> Working codename: **Weaver**. Package prefix `weaver_*`.
+> Working codename: **Hypothesise**. Package prefix `hypothesise_*`.
 > Name is a placeholder — one find-replace to change it. Decide by end of M1.
 
 ---
 
 ## 0. The one-paragraph version
 
-Weaver sits between an AI agent and the tools it calls. Every tool call is
+Hypothesise sits between an AI agent and the tools it calls. Every tool call is
 intercepted, scored against what that agent normally does, and allowed, held for
 human approval, or blocked. Risk is stored **on the graph** — on agents, on tools,
 on resources, and on the edges between them — so that a resource which behaved
@@ -55,9 +55,9 @@ So the split is absolute:
 2. It never does a synchronous DB write. Events go onto a bounded queue; if the
    queue is full, events are dropped and a counter increments. Dropping telemetry
    is always better than blocking the agent.
-3. It has a hard decision budget (`WEAVER_DECISION_BUDGET_MS`, default 50 ms). On
-   timeout or any exception, it applies `WEAVER_FAIL_MODE` — default **open**.
-4. `WEAVER_MODE=observe` is the default for a new install. Nothing is ever blocked
+3. It has a hard decision budget (`HYPOTHESISE_DECISION_BUDGET_MS`, default 50 ms). On
+   timeout or any exception, it applies `HYPOTHESISE_FAIL_MODE` — default **open**.
+4. `HYPOTHESISE_MODE=observe` is the default for a new install. Nothing is ever blocked
    until the operator flips to `enforce`. Every customer runs in observe mode for
    at least two weeks first.
 
@@ -70,7 +70,7 @@ We intercept at the **MCP protocol layer**, not inside a framework.
 ```
 Claude Code ─┐
 Cursor ──────┤
-LangGraph ───┼──► Weaver MCP Proxy ──► github-mcp / postgres-mcp / shell-mcp / ...
+LangGraph ───┼──► Hypothesise MCP Proxy ──► github-mcp / postgres-mcp / shell-mcp / ...
 CrewAI ──────┤
 Custom ──────┘
 ```
@@ -274,7 +274,7 @@ Every node and edge carries `risk ∈ [0,1]` and `confidence ∈ [0,1]`.
 risk ← risk + α · w · (1 − risk)
 ```
 
-- `α` = `WEAVER_ALPHA`, default 0.35
+- `α` = `HYPOTHESISE_ALPHA`, default 0.35
 - `w` = detector weight, normalised: low 0.1 / medium 0.3 / high 0.6 / critical 1.0
 
 ### Decay toward the class floor
@@ -286,7 +286,7 @@ Applied lazily on read, using `risk_updated`, so there is no background sweep jo
 risk ← floor + (risk − floor) · e^(−λ · Δt)
 ```
 
-- `λ` = `WEAVER_LAMBDA`, default 0.02/hr → roughly a 35-hour half-life
+- `λ` = `HYPOTHESISE_LAMBDA`, default 0.02/hr → roughly a 35-hour half-life
 - `λ` is tuned **per node class**: a `secret` node decays slower than a `source_code` node
 - `floor` is the intrinsic risk of the class, never decayed below:
 
@@ -439,16 +439,16 @@ AI_Layer/
 │   ├── BUILD_PLAN.md          ← what to build, in order
 │   └── DECISIONS.md           ← ADR log + open questions
 ├── packages/
-│   ├── core/weaver_core/      ← THE ENGINE. No I/O, no framework deps.
+│   ├── core/hypothesise_core/      ← THE ENGINE. No I/O, no framework deps.
 │   │   ├── graph/             ← node/edge/path model + traversal
 │   │   ├── baseline/          ← per-agent behavioural baselines
 │   │   ├── detectors/         ← tier 1/2/3, pure functions
 │   │   ├── risk/              ← reinforcement, decay, corroboration
 │   │   ├── policy/            ← scoring + verdict + explanation
 │   │   └── trust/             ← temperature state machine
-│   ├── store/weaver_store/    ← persistence, SQLAlchemy, migrations
-│   ├── proxy/weaver_proxy/    ← MCP interception (the data plane)
-│   ├── api/weaver_api/        ← FastAPI control plane
+│   ├── store/hypothesise_store/    ← persistence, SQLAlchemy, migrations
+│   ├── proxy/hypothesise_proxy/    ← MCP interception (the data plane)
+│   ├── api/hypothesise_api/        ← FastAPI control plane
 │   └── adapters/langgraph/    ← second front door (M4)
 ├── apps/dashboard/            ← Next.js UI
 ├── scenarios/                 ← eval suite: benign/ and attack/
@@ -458,7 +458,7 @@ AI_Layer/
 └── scripts/
 ```
 
-**`weaver_core` has no I/O and no framework dependencies.** Not for elegance —
+**`hypothesise_core` has no I/O and no framework dependencies.** Not for elegance —
 because ownership of this project is still undecided, and a core that imports
 nothing is a core that can be licensed, carved out, or kept. Everything crossing
 that boundary goes through explicit interfaces.

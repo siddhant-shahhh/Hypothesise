@@ -75,19 +75,19 @@ Write-Host "==> target: $targetExe"
 # ---- upgrade pip quietly ---------------------------------------------------
 & $TARGET -m pip install -q --upgrade pip 2>$null
 
-# ---- check for shadowing weaver package ------------------------------------
+# ---- check for shadowing hypothesise package ------------------------------------
 Write-Host "==> checking for a shadowing package"
 $SITE = & $TARGET -c "import site; print(site.getsitepackages()[0])" 2>$null
-if ($SITE -and (Test-Path "$SITE\weaver") -and -not (Test-Path "$SITE\weaver\__main__.py")) {
+if ($SITE -and (Test-Path "$SITE\hypothesise") -and -not (Test-Path "$SITE\hypothesise\__main__.py")) {
     Write-Error @"
-error: a different package named 'weaver' is installed and will shadow this one.
+error: a different package named 'hypothesise' is installed and will shadow this one.
 
-    $SITE\weaver
+    $SITE\hypothesise
 
-That is almost certainly the unrelated 'weaver' package from PyPI. Remove it:
+That is a stale or foreign copy, not this repo. Remove it:
 
-    Remove-Item -Recurse -Force "$SITE\weaver"
-    Get-Item "$SITE\weaver-*.dist-info" | Remove-Item -Recurse -Force
+    Remove-Item -Recurse -Force "$SITE\hypothesise"
+    Get-Item "$SITE\hypothesise-*.dist-info" | Remove-Item -Recurse -Force
     .\scripts\dev-setup.ps1
 "@
     exit 1
@@ -95,7 +95,7 @@ That is almost certainly the unrelated 'weaver' package from PyPI. Remove it:
 Write-Host "    none found"
 
 # ---- install all editable packages -----------------------------------------
-Write-Host "==> installing weaver packages (editable)"
+Write-Host "==> installing hypothesise packages (editable)"
 $packages = @(
     "packages\core", "packages\store", "packages\proxy",
     "packages\api",  "packages\cli",
@@ -136,12 +136,12 @@ Write-Host "==> installing dev tools"
 # ---- verify from outside the repo ------------------------------------------
 Write-Host "==> verifying"
 $verifyScript = @"
-import weaver, weaver_core, weaver_store, weaver_proxy, weaver_api
-print('    weaver      ', weaver.__version__)
-print('    weaver_core ', weaver_core.__version__)
-print('    weaver_store  ok')
-print('    weaver_proxy', weaver_proxy.__version__)
-print('    weaver_api    ok')
+import hypothesise, hypothesise_core, hypothesise_store, hypothesise_proxy, hypothesise_api
+print('    hypothesise      ', hypothesise.__version__)
+print('    hypothesise_core ', hypothesise_core.__version__)
+print('    hypothesise_store  ok')
+print('    hypothesise_proxy', hypothesise_proxy.__version__)
+print('    hypothesise_api    ok')
 "@
 
 $tmpDir = [System.IO.Path]::GetTempPath()
@@ -169,13 +169,13 @@ Activate the environment:
 Then:
 
     pytest
-    python -m weaver_api --demo
+    python -m hypothesise_api --demo
     python scripts\replay.py --all
 
 Or run without activating, using the full path:
 
     $TARGET -m pytest
-    $TARGET -m weaver_api --demo
-    weaver api
+    $TARGET -m hypothesise_api --demo
+    hypothesise api
 
 "@

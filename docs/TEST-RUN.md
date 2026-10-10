@@ -17,17 +17,17 @@ bash scripts/ops/testbed-setup.sh
 
 # 2. control plane — leave this running in its own terminal
 source .venv/bin/activate
-weaver api
+hypothesise api
 
 # 3. reload VS Code (Cmd+Shift+P -> Developer: Reload Window)
 ```
 
 Then open a **Copilot agent chat** (agent mode, not inline). It should list
-tools from a server called `weaver`.
+tools from a server called `hypothesise`.
 
 > **First, delete two stray files.** An earlier attempt left a broken
 > `testbed/devdata.db` and `testbed/devdata.db-journal` on the drive. SQLite
-> cannot write there, so the real database lives in `~/weaver-testbed/`.
+> cannot write there, so the real database lives in `~/hypothesise-testbed/`.
 > ```bash
 > rm -f testbed/devdata.db testbed/devdata.db-journal
 > ```
@@ -40,7 +40,7 @@ curl -s localhost:8080/v1/detectors | python -m json.tool | head -20
 ```
 
 `errors` must be `{}`. In VS Code, **Output → MCP** should show
-`weaver: shipping events to http://127.0.0.1:8080/v1/events`. No such line means
+`hypothesise: shipping events to http://127.0.0.1:8080/v1/events`. No such line means
 events are dying in memory.
 
 ---
@@ -218,8 +218,8 @@ broken for days while every test passed.
 ## What to send me after a week
 
 ```bash
-curl -s localhost:8080/v1/stats  > /tmp/weaver-stats.json
-curl -s localhost:8080/v1/shadow > /tmp/weaver-shadow.json
+curl -s localhost:8080/v1/stats  > /tmp/hypothesise-stats.json
+curl -s localhost:8080/v1/shadow > /tmp/hypothesise-shadow.json
 ```
 
 Those two files plus a sentence about what you were doing when anything fired.
@@ -240,14 +240,14 @@ The three outcomes:
 - Set `mode: enforce` until Shadow has been clean for two weeks
 - Point the config at anything real — the fixtures are fake on purpose
 - Expose port 8080 to a network (no authentication yet — ADR-009)
-- Commit `testbed/` or `weaver.config.json` — both are gitignored
+- Commit `testbed/` or `hypothesise.config.json` — both are gitignored
 
 ## Teardown
 
 ```bash
-rm -rf ~/weaver-testbed testbed
-rm -f weaver.config.json .vscode/mcp.json
-rm -rf ~/.weaver          # deletes accumulated history too
+rm -rf ~/hypothesise-testbed testbed
+rm -f hypothesise.config.json .vscode/mcp.json
+rm -rf ~/.hypothesise          # deletes accumulated history too
 ```
 
 Put your original `.vscode/mcp.json` back if you had one.

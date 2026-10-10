@@ -7,9 +7,9 @@ budget enforcement, fail-open, observe-mode, and no-sentence-no-block.
 import asyncio
 
 import pytest
-from weaver_core.events import Decision, Event, Resource, Tool, Verdict
-from weaver_core.graph.model import GraphSnapshot
-from weaver_proxy.gate import Gate, GateConfig
+from hypothesise_core.events import Decision, Event, Resource, Tool, Verdict
+from hypothesise_core.graph.model import GraphSnapshot
+from hypothesise_proxy.gate import Gate, GateConfig
 
 
 def _ev() -> Event:
