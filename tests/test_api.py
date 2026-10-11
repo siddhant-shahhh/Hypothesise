@@ -268,7 +268,10 @@ def test_dashboard_never_shows_sample_data_unless_asked():
     install — the worst thing a security dashboard can do."""
     html = STATIC.read_text()
     body = html.split("async function api(path) {", 1)[1].split("\n}\n", 1)[0]
-    assert "if (DEMO) return resolveMock(path);" in body
+    catch = body.split("catch (err) {", 1)[1]
+    guard = catch.split("out = resolveMock(path);", 1)[0]
+    assert "if (!DEMO)" in guard and "throw new Error" in guard, \
+        "without ?demo a failed request must raise, before any sample data is used"
     assert "has('demo')" in html
 
 
