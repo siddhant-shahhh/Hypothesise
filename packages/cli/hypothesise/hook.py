@@ -30,7 +30,12 @@ AGENT = "claude-code"
 # client -> (agent id, session prefix). Copilot keeps its own agent id: it is a
 # different agent with a different baseline from the wrapped MCP servers that
 # record under "vscode".
-CLIENTS = {"claude-code": ("claude-code", "cc"), "vscode": ("copilot", "vs")}
+CLIENTS = {"claude-code": ("claude-code", "cc"), "vscode": ("copilot", "vs"),
+           "cursor": ("cursor", "cu")}
+
+# Clients whose MCP calls already pass through wrapped servers (`init`), so the
+# hook must skip them or every MCP call is counted twice.
+_WRAPPED_MCP = {"vscode", "cursor"}
 
 # Built-in tool -> the verb the classifier understands. Without this, `Edit`
 # and `Grep` classify as UNKNOWN and `Task` (spawning a sub-agent) is not seen
@@ -56,14 +61,19 @@ _VERB = {
     "get_terminal_output": "read_output",
     "fetch_webpage": "fetch", "fetch": "fetch", "open_simple_browser": "fetch",
     "runSubagent": "invoke_agent", "run_subagent": "invoke_agent",
+    # Cursor built-ins.
+    "search_replace": "write_file", "write": "write_file", "delete_file": "write_file",
+    "run_terminal_cmd": "bash", "grep": "search_files", "glob_file_search": "search_files",
+    "web_search": "search_web", "read_lints": "read_file",
 }
 
 _SHELL_TOOLS = {"Bash", "bash", "powershell", "run_in_terminal", "write_bash",
-                "write_powershell", "KillShell"}
+                "write_powershell", "KillShell", "run_terminal_cmd"}
 
 # Built-in tool -> the argument that names what it touches.
-_TARGET_KEYS = ("file_path", "filePath", "notebook_path", "path", "dirPath", "url",
-                "urls", "command", "input", "pattern", "query")
+_TARGET_KEYS = ("file_path", "filePath", "target_file", "notebook_path", "path",
+                "dirPath", "target_directory", "url", "urls", "command", "input",
+                "pattern", "query", "search_term")
 
 
 def _target(tool: str, args: dict[str, Any]) -> str:
@@ -101,6 +111,11 @@ def _outcome(response: Any) -> tuple[str, str | None]:
     return ("denied" if looks_denied(text) else "error"), text
 
 
+def _session(payload: dict[str, Any]) -> str:
+    # Cursor identifies the chat as conversation_id.
+    return str(payload.get("session_id") or payload.get("conversation_id") or "unknown")
+
+
 def _is_mcp(tool_name: str) -> bool:
     return tool_name.startswith("mcp__") or tool_name.startswith("mcp_")
 
@@ -114,9 +129,9 @@ def build_event(payload: dict[str, Any], step: int,
     tool_name = str(payload.get("tool_name") or "")
     if not tool_name:
         return None
-    # Copilot's MCP calls already go through the wrapped servers (`init`), so
-    # recording them here too would count every one twice.
-    if client == "vscode" and _is_mcp(tool_name):
+    # Copilot's and Cursor's MCP calls already go through the wrapped servers
+    # (`init`), so recording them here too would count every one twice.
+    if client in _WRAPPED_MCP and _is_mcp(tool_name):
         return None
     args = payload.get("tool_input") or {}
     if not isinstance(args, dict):
@@ -133,11 +148,12 @@ def build_event(payload: dict[str, Any], step: int,
 
     verb = _VERB.get(name, name)
     cls = classify_resource(uri, server, verb)
-    status, error = _outcome(payload.get("tool_response"))
+    # Claude Code and VS Code say tool_response; Cursor says tool_output.
+    status, error = _outcome(payload.get("tool_response", payload.get("tool_output")))
     blob = json.dumps(args, default=str)
     ev = Event(
         agent_id=agent,
-        session_id=f"{prefix}-{payload.get('session_id') or 'unknown'}",
+        session_id=f"{prefix}-{_session(payload)}",
         step=step,
         tool=Tool(server=server, name=name),
         resource=Resource(uri=uri, cls=cls),
@@ -159,12 +175,14 @@ def run(client: str = AGENT, stdin: Any = None) -> int:
         from hypothesise_proxy.spool import append, next_step
 
         _, prefix = CLIENTS.get(client, CLIENTS[AGENT])
-        if client == "vscode" and _is_mcp(str(payload.get("tool_name") or "")):
-            return 0
-        session = f"{prefix}-{payload.get('session_id') or 'unknown'}"
-        record = build_event(payload, next_step(session), client)
-        if record is not None:
-            append([record])
+        if not (client in _WRAPPED_MCP and _is_mcp(str(payload.get("tool_name") or ""))):
+            session = f"{prefix}-{_session(payload)}"
+            record = build_event(payload, next_step(session), client)
+            if record is not None:
+                append([record])
     except Exception:  # noqa: BLE001 — a hook must never break the agent
         pass
+    if client == "cursor":
+        # Cursor reads a JSON reply from every hook; an empty object changes nothing.
+        print("{}")
     return 0

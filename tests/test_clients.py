@@ -88,7 +88,7 @@ def test_init_adds_one_claude_code_hook_and_keeps_existing_ones(machine):
     ours = groups[-1]
     assert ours["matcher"] == "*"
     assert ours["hooks"][0]["command"] == \
-        '"/opt/tools/hypothesise/bin/python" -m hypothesise hook claude-code'
+        '/opt/tools/hypothesise/bin/python -m hypothesise hook claude-code'
     assert s["permissions"] == ORIGINAL_CLAUDE["permissions"]
 
 
@@ -197,7 +197,8 @@ def test_config_locations_per_os(monkeypatch, tmp_path, platform, osname, expect
     assert expect in desktop and desktop.endswith("Claude/claude_desktop_config.json")
 
 
-def test_hook_command_quotes_paths_with_spaces():
+def test_hook_command_quotes_paths_with_spaces(monkeypatch):
+    monkeypatch.setattr(c, "_windows", lambda: False)
     cmd = c.hook_command("/Users/Pratham Agarwal/.local/bin/python")
     assert cmd == '"/Users/Pratham Agarwal/.local/bin/python" -m hypothesise hook claude-code'
 
@@ -271,7 +272,7 @@ def test_init_adds_the_copilot_hook_and_uninstall_removes_it(machine, capsys):
     data = _load(hook)
     (entry,) = data["hooks"]["PostToolUse"]
     assert entry["type"] == "command"
-    assert entry["command"] == '"/opt/tools/hypothesise/bin/python" -m hypothesise hook vscode'
+    assert entry["command"] == "/opt/tools/hypothesise/bin/python -m hypothesise hook vscode"
     capsys.readouterr()
     c.cmd_status(_args())
     assert "connected (built-in tools)" in capsys.readouterr().out
@@ -288,3 +289,76 @@ def test_copilot_hook_is_not_offered_without_vscode(tmp_path, monkeypatch):
     monkeypatch.setattr(c, "_windows", lambda: False)
     monkeypatch.setattr(c.shutil, "which", lambda _n: None)
     assert c.plan_copilot_hook("/x/python") is None
+
+
+def test_hook_commands_are_unquoted_so_powershell_can_run_them():
+    """PowerShell rejects `"C:/x/python.exe" -m ...` (a quoted string followed
+    by arguments). VS Code runs hooks through PowerShell on Windows, so the
+    first Windows install's Copilot hook failed silently on every call."""
+    cmd = c.copilot_hook_command("C:\\Users\\Aditi\\AppData\\Local\\Programs\\Python\\Python312\\python.exe")
+    assert not cmd.startswith('"')
+    assert cmd.endswith("-m hypothesise hook vscode")
+
+
+def test_a_path_with_spaces_is_still_quoted_off_windows(monkeypatch):
+    monkeypatch.setattr(c, "_windows", lambda: False)
+    assert c.shell_safe_exe("/Users/P A/bin/python") == '"/Users/P A/bin/python"'
+
+
+def test_init_repairs_an_outdated_quoted_hook(machine):
+    hook = c.copilot_hook_file()
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text(json.dumps({"hooks": {"PostToolUse": [{"type": "command",
+        "command": '"/opt/tools/hypothesise/bin/python" -m hypothesise hook vscode', "timeout": 10}]}}))
+    s = _load(machine["claude"][0])
+    s["hooks"]["PostToolUse"].append({"matcher": "*", "hooks": [{"type": "command",
+        "command": '"/opt/tools/hypothesise/bin/python" -m hypothesise hook claude-code'}]})
+    machine["claude"][0].write_text(json.dumps(s))
+    c.cmd_init(_args())
+    assert _load(hook)["hooks"]["PostToolUse"][0]["command"] == \
+        "/opt/tools/hypothesise/bin/python -m hypothesise hook vscode"
+    cmds = [h["command"] for g in _load(machine["claude"][0])["hooks"]["PostToolUse"] for h in g["hooks"]]
+    assert "/opt/tools/hypothesise/bin/python -m hypothesise hook claude-code" in cmds
+    assert not any(x.startswith('"') and "hypothesise" in x for x in cmds)
+
+
+# --- 0.1.0a2: Cursor hook, Antigravity -------------------------------------
+
+def test_cursor_hook_is_added_beside_the_users_own_hooks(machine):
+    f = c.cursor_hooks_file()
+    mine = {"version": 1, "hooks": {"afterFileEdit": [{"command": "./hooks/format.sh"}],
+                                    "postToolUse": [{"command": "./hooks/log.sh"}]}}
+    f.write_text(json.dumps(mine))
+    c.cmd_init(_args())
+    data = _load(f)
+    assert data["hooks"]["afterFileEdit"] == mine["hooks"]["afterFileEdit"]
+    cmds = [h["command"] for h in data["hooks"]["postToolUse"]]
+    assert "./hooks/log.sh" in cmds
+    assert "/opt/tools/hypothesise/bin/python -m hypothesise hook cursor" in cmds
+    c.cmd_init(_args())
+    assert _load(f) == data, "idempotent"
+    c.cmd_uninstall(_args())
+    assert _load(f) == mine, "uninstall leaves exactly the user's own hooks"
+
+
+def test_cursor_hook_file_we_created_is_removed_on_uninstall(machine):
+    c.cmd_init(_args())
+    assert c.cursor_hooks_file().is_file()
+    c.cmd_uninstall(_args())
+    assert not c.cursor_hooks_file().exists()
+
+
+def test_antigravity_mcp_servers_are_wrapped_and_restored(machine):
+    f = Path(c.mcp_files()[4].path)
+    assert f.as_posix().endswith(".gemini/config/mcp_config.json")
+    f.parent.mkdir(parents=True, exist_ok=True)
+    orig = {"mcpServers": {"gcloud": {"command": "npx", "args": ["-y", "@google-cloud/gcloud-mcp"]},
+                           "remote": {"serverUrl": "https://x.example/mcp"}}}
+    f.write_text(json.dumps(orig))
+    c.cmd_init(_args(client=["antigravity"]))
+    got = _load(f)["mcpServers"]
+    assert c.is_wrapped(got["gcloud"]) and "--client" in got["gcloud"]["args"]
+    assert got["gcloud"]["args"][got["gcloud"]["args"].index("--client") + 1] == "antigravity"
+    assert got["remote"] == orig["mcpServers"]["remote"]
+    c.cmd_uninstall(_args(client=["antigravity"]))
+    assert _load(f) == orig

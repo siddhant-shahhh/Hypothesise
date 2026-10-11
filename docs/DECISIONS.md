@@ -1028,3 +1028,43 @@ the PyPI *Owner* and approves releases through the `pypi` GitHub environment.
 Still open: the **license** (`pyproject.toml` says `UNLICENSED`). It is now
 Siddhant's call and must be set before the first upload, because an upload is
 permanent.
+
+---
+
+### ADR-040 — 0.1.0a2: fixes from the first Windows install, Cursor hook, Antigravity
+**Date:** 2026-10-11 · **Status:** accepted · amends ADR-036, ADR-038
+
+Findings from the first install of the published 0.1.0a1 on Windows:
+
+1. **Hook commands were quoted, and PowerShell cannot run them.** `init` wrote
+   `"C:/…/python.exe" -m hypothesise hook vscode`. cmd and sh accept a quoted
+   path followed by arguments; PowerShell — which VS Code uses for hooks on
+   Windows — rejects it as a parse error. Hooks fail silently by design, so
+   Copilot's activity simply never arrived. Commands are now unquoted
+   (`shell_safe_exe`): paths without spaces as-is, Windows paths with spaces
+   via their 8.3 short name, quoting only as a last resort. Re-running `init`
+   **repairs** an outdated hook instead of reporting "already connected".
+2. **`--demo` wrote sample sessions into the real database**, where they stayed
+   and read as real activity. It now uses `~/.hypothesise/demo.db`, recreated
+   each time, and does not drain the spool (which would have moved real events
+   into the throwaway database).
+3. **Port 8080 inside a Windows reserved range** produced a raw WinError. The
+   dashboard now checks the port first and moves to the next free one, saying
+   so; if none of 21 is free it explains the likely cause.
+
+Added:
+
+- **Cursor hook.** Cursor has a hook system (cursor.com/docs/hooks); `init`
+  adds a `postToolUse` entry to `~/.cursor/hooks.json` beside the user's own
+  hooks and `uninstall` removes only ours. Cursor's payload says
+  `conversation_id` and `tool_output`, and it expects a JSON reply, so the
+  receiver has a Cursor mode. MCP calls are skipped (`mcp_…` names) because
+  the wrapped servers record them. Agent id `cursor`, session `cu-…`.
+- **Antigravity.** Its MCP servers live in `~/.gemini/config/mcp_config.json`
+  (earlier: `~/.gemini/antigravity/mcp_config.json`) in the familiar
+  `mcpServers` shape, and are wrapped like Cursor's. Antigravity documents no
+  hooks, so its built-in tools stay invisible.
+
+Unverified until a real run: Cursor's exact MCP tool-name prefix (the skip
+assumes `mcp_`), and whether Cursor also loads our Claude Code hook as a
+"third-party hook", which would record its calls twice under two agent ids.

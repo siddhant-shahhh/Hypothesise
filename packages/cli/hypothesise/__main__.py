@@ -6,7 +6,7 @@
     hypothesise uninstall                       restore every config init changed
     hypothesise proxy --config FILE [--detect] MCP interception from a config file
     hypothesise wrap --client C --server S -- CMD...   one wrapped server (written by init)
-    hypothesise hook claude-code|vscode         agent hooks (written by init)
+    hypothesise hook claude-code|vscode|cursor  agent hooks (written by init)
     hypothesise doctor                          diagnose the environment
     hypothesise migrate [--check]               bring the schema up to date
     hypothesise version
@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-CLIENTS = ("claude-code", "claude-desktop", "cursor", "vscode")
+CLIENTS = ("claude-code", "claude-desktop", "cursor", "vscode", "antigravity")
 
 
 def _cmd_api(args: argparse.Namespace) -> int:
@@ -33,7 +33,33 @@ def _cmd_api(args: argparse.Namespace) -> int:
         sys.stdout.reconfigure(line_buffering=True)
     from hypothesise_api.app import create_app
 
-    app = create_app(db_url=args.db, webhook_url=args.webhook)
+    db_url = args.db
+    if args.demo and not db_url:
+        # Sample sessions never go into the real database (ADR-040): mixed in,
+        # they read as activity that never happened and cannot be told apart.
+        from pathlib import Path
+
+        from hypothesise_proxy.spool import home
+
+        demo_db = home() / "demo.db"
+        demo_db.parent.mkdir(parents=True, exist_ok=True)
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            Path(f"{demo_db}{suffix}").unlink(missing_ok=True)
+        db_url = f"sqlite:///{demo_db}"
+        print(f"hypothesise: demo mode — sample data in {demo_db}; your real data is untouched")
+
+    port = _free_port(args.host, args.port)
+    if port is None:
+        print(f"hypothesise: cannot listen on {args.host}:{args.port} or the next 20 ports.\n"
+              f"        Another program is using them, or (on Windows) Hyper-V/WSL/Docker\n"
+              f"        reserved them. Try:  hypothesise api --port 9123", file=sys.stderr)
+        return 1
+    if port != args.port:
+        print(f"hypothesise: port {args.port} is unavailable (in use, or reserved by the OS); "
+              f"using {port} instead")
+    args.port = port
+
+    app = create_app(db_url=db_url, webhook_url=args.webhook)
     if args.demo:
         from hypothesise_api.demo import load_demo
 
@@ -54,15 +80,43 @@ def _cmd_api(args: argparse.Namespace) -> int:
         print(f"hypothesise: serving {index}  (modified {when} UTC)")
     else:
         print(f"hypothesise: no dashboard file at {index}", file=sys.stderr)
-    # Whatever proxies and hooks recorded while the dashboard was closed.
-    from hypothesise_api.app import ingest_spool_once, start_spool_ingest
+    # Whatever proxies and hooks recorded while the dashboard was closed. Not in
+    # demo mode: the spool would be drained into the throwaway demo database
+    # and the real events lost from the real one.
+    if not args.demo:
+        from hypothesise_api.app import ingest_spool_once, start_spool_ingest
 
-    caught_up = ingest_spool_once(app)
-    if caught_up:
-        print(f"hypothesise: read {caught_up} events recorded while the dashboard was closed")
-    start_spool_ingest(app)
+        caught_up = ingest_spool_once(app)
+        if caught_up:
+            print(f"hypothesise: read {caught_up} events recorded while the dashboard was closed")
+        start_spool_ingest(app)
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
+
+
+def _free_port(host: str, port: int, tries: int = 21) -> int | None:
+    """The first port from `port` that can actually be bound, or None.
+
+    Windows reserves whole port ranges for Hyper-V, WSL and Docker, and 8080 is
+    often inside one; the raw error ("an attempt was made to access a socket in
+    a way forbidden by its access permissions") tells a user nothing useful.
+    """
+    import os
+    import socket
+
+    for candidate in range(port, port + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            # Same as uvicorn on POSIX, so a port still in TIME_WAIT after a
+            # restart is not mistaken for taken. Never on Windows, where the
+            # flag lets two processes share a port.
+            if os.name != "nt":
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((host, candidate))
+                return candidate
+            except OSError:
+                continue
+    return None
 
 
 def _session_for(client: str) -> str:
@@ -294,7 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
     w.set_defaults(fn=_cmd_wrap)
 
     h = sub.add_parser("hook", help="agent hook receiver (written by init)")
-    h.add_argument("client", choices=["claude-code", "vscode"])
+    h.add_argument("client", choices=["claude-code", "vscode", "cursor"])
     h.set_defaults(fn=_cmd_hook)
 
     d = sub.add_parser("doctor", help="diagnose the environment")

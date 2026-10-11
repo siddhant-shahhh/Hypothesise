@@ -46,7 +46,7 @@ from .spooler import Spooler
 from .sync import ControlPlaneSync
 from .upstream import Upstream
 
-SERVER_INFO = {"name": "hypothesise-proxy", "version": "0.1.0a1"}
+SERVER_INFO = {"name": "hypothesise-proxy", "version": "0.1.0a2"}
 
 
 def _error_text(resp: dict[str, Any]) -> str:

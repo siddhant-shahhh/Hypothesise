@@ -374,3 +374,30 @@ def test_copilot_read_then_send_is_one_chain(hhome, tmp_path):
     assert ingest_spool_once(app) == 2
     fired = {d["detector"] for a in app.state.repo.alerts() for d in a.get("detectors") or []}
     assert "sensitive_then_egress" in fired
+
+
+# --- 0.1.0a2: Cursor hook ----------------------------------------------------
+
+def test_cursor_hook_records_builtins_and_replies_with_json(hhome, capsys):
+    from hypothesise.hook import run
+
+    assert run("cursor", stdin=io.StringIO(json.dumps({
+        "conversation_id": "k1", "tool_name": "run_terminal_cmd",
+        "tool_input": {"command": "cat .env"}, "tool_output": "SECRET=1"}))) == 0
+    assert capsys.readouterr().out.strip() == "{}", "Cursor expects a JSON reply"
+    assert run("cursor", stdin=io.StringIO(json.dumps({
+        "conversation_id": "k1", "tool_name": "read_file",
+        "tool_input": {"target_file": "/app/.env"}}))) == 0
+    a, b = spool.SpoolReader().read()[0]
+    assert a["agent_id"] == "cursor" and a["session_id"] == "cu-k1"
+    assert a["resource"]["uri"] == "shell://cat .env" and a["action"] == "execute"
+    assert b["resource"] == {"uri": "/app/.env", "class": "secret"} and b["action"] == "read"
+
+
+def test_cursor_hook_leaves_mcp_to_the_wrapped_servers(hhome, capsys):
+    from hypothesise.hook import run
+
+    run("cursor", stdin=io.StringIO(json.dumps({
+        "conversation_id": "k2", "tool_name": "mcp_fs_read_file", "tool_input": {"path": "/x"}})))
+    assert spool.SpoolReader().read()[0] == []
+    assert capsys.readouterr().out.strip() == "{}"

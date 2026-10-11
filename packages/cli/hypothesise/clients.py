@@ -38,7 +38,7 @@ from typing import Any
 WRAP = ["-m", "hypothesise", "wrap"]
 HOOK_MARK = "-m hypothesise hook"
 CLAUDE_CODE = "claude-code"
-CLIENTS = ("claude-code", "claude-desktop", "cursor", "vscode")
+CLIENTS = ("claude-code", "claude-desktop", "cursor", "vscode", "antigravity")
 
 
 # -- where things live ------------------------------------------------------
@@ -76,6 +76,13 @@ def mcp_files(project: Path | None = None) -> list[McpFile]:
         McpFile("vscode", "VS Code", base / "Code" / "User" / "mcp.json", "servers"),
         McpFile("vscode", "VS Code Insiders",
                 base / "Code - Insiders" / "User" / "mcp.json", "servers"),
+        # Antigravity (Google). The shared config feeds both its IDE and CLI;
+        # earlier releases used the per-app path. Same mcpServers shape as
+        # Claude/Cursor. Its built-in tools have no hooks, so only MCP is seen.
+        McpFile("antigravity", "Antigravity",
+                Path.home() / ".gemini" / "config" / "mcp_config.json", "mcpServers"),
+        McpFile("antigravity", "Antigravity (older layout)",
+                Path.home() / ".gemini" / "antigravity" / "mcp_config.json", "mcpServers"),
     ]
     if project is not None:
         files += [
@@ -106,8 +113,49 @@ def vscode_present() -> bool:
             or shutil.which("code") is not None)
 
 
+def shell_safe_exe(exe: str) -> str:
+    """The interpreter path written so every shell runs it the same way.
+
+    Agents run hook commands through whatever shell they like — PowerShell on
+    Windows for VS Code, Git Bash for Claude Code, sh elsewhere. A quoted path
+    followed by arguments works in cmd and sh but is a *parse error* in
+    PowerShell, and a hook that fails is silent by design — so the first
+    Windows install recorded nothing at all. An unquoted path with no spaces
+    means the same thing to every shell: use it, via the 8.3 short name on
+    Windows when the real path has spaces. Quote only as a last resort.
+    """
+    path = Path(exe).as_posix()
+    if " " not in path:
+        return path
+    if _windows():
+        try:
+            import ctypes
+
+            buf = ctypes.create_unicode_buffer(1024)
+            if ctypes.windll.kernel32.GetShortPathNameW(exe, buf, 1024):  # type: ignore[attr-defined]
+                short = Path(buf.value).as_posix()
+                if short and " " not in short:
+                    return short
+        except (AttributeError, OSError):
+            pass
+    return f'"{path}"'
+
+
+def cursor_hooks_file() -> Path:
+    """User-level Cursor hooks (cursor.com/docs/hooks), shared with the user's own."""
+    return Path.home() / ".cursor" / "hooks.json"
+
+
+def cursor_present() -> bool:
+    return (Path.home() / ".cursor").is_dir() or shutil.which("cursor") is not None
+
+
+def cursor_hook_command(exe: str) -> str:
+    return f"{shell_safe_exe(exe)} {HOOK_MARK} cursor"
+
+
 def copilot_hook_command(exe: str) -> str:
-    return f'"{Path(exe).as_posix()}" {HOOK_MARK} vscode'
+    return f"{shell_safe_exe(exe)} {HOOK_MARK} vscode"
 
 
 def claude_code_present() -> bool:
@@ -136,8 +184,8 @@ def ephemeral_interpreter(exe: str) -> bool:
 
 def hook_command(exe: str) -> str:
     # Forward slashes work in cmd, PowerShell and the Git Bash Claude Code
-    # uses on Windows; backslashes inside double quotes do not survive bash.
-    return f'"{Path(exe).as_posix()}" {HOOK_MARK} {CLAUDE_CODE}'
+    # uses on Windows; see shell_safe_exe for why the path is not quoted.
+    return f"{shell_safe_exe(exe)} {HOOK_MARK} {CLAUDE_CODE}"
 
 
 # -- entries ----------------------------------------------------------------
@@ -411,7 +459,19 @@ def plan_hook(exe: str) -> Change | None:
         ch.error = err
         return ch
     if has_hook(data):
-        ch.skipped.append(("all tools", "already connected"))
+        want = hook_command(exe)
+        new = json.loads(json.dumps(data))
+        stale = False
+        for group in _hook_groups(new):
+            for h in (group or {}).get("hooks") or []:
+                if HOOK_MARK in str((h or {}).get("command", "")) and h.get("command") != want:
+                    h["command"] = want
+                    stale = True
+        if not stale:
+            ch.skipped.append(("all tools", "already connected"))
+            return ch
+        ch.data = new
+        ch.servers.append("all tools (repair outdated hook command)")
         return ch
     new = json.loads(json.dumps(data))
     hooks = new.setdefault("hooks", {})
@@ -433,13 +493,18 @@ def plan_copilot_hook(exe: str) -> Change | None:
         return None
     path = copilot_hook_file()
     ch = Change("VS Code Copilot (built-in tools)", "vscode", path, "hook")
+    want = {"hooks": {"PostToolUse": [
+        {"type": "command", "command": copilot_hook_command(exe), "timeout": 10}]}}
     if path.is_file():
         data, _ = read_json(path)
-        if data is not None and HOOK_MARK in json.dumps(data):
+        if data == want:
             ch.skipped.append(("all tools", "already connected"))
             return ch
-    ch.data = {"hooks": {"PostToolUse": [
-        {"type": "command", "command": copilot_hook_command(exe), "timeout": 10}]}}
+        if data is not None and HOOK_MARK in json.dumps(data):
+            ch.data = want
+            ch.servers.append("all tools (repair outdated hook command)")
+            return ch
+    ch.data = want
     ch.servers.append("all tools (built-in; MCP stays on the wrapped servers)")
     return ch
 
@@ -452,6 +517,71 @@ def plan_copilot_unhook() -> Change | None:
     if data is None or HOOK_MARK not in json.dumps(data):
         return None
     ch = Change("VS Code Copilot (built-in tools)", "vscode", path, "remove")
+    ch.servers.append("all tools hook")
+    return ch
+
+
+def _cursor_entries(data: dict) -> list:
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+    post = hooks.get("postToolUse")
+    return post if isinstance(post, list) else []
+
+
+def plan_cursor_hook(exe: str) -> Change | None:
+    """Cursor's built-in tools (read, edit, terminal) bypass MCP; its
+    postToolUse hook reports every one (ADR-040). The user's own hooks in the
+    same file are kept untouched."""
+    if not cursor_present():
+        return None
+    path = cursor_hooks_file()
+    ch = Change("Cursor (built-in tools)", "cursor", path, "hook")
+    data, err = read_json(path) if path.exists() else ({}, "")
+    if data is None:
+        ch.error = err
+        return ch
+    want = cursor_hook_command(exe)
+    new = json.loads(json.dumps(data))
+    new.setdefault("version", 1)
+    hooks = new.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        ch.error = "'hooks' in hooks.json is not an object — left untouched"
+        return ch
+    post = hooks.setdefault("postToolUse", [])
+    ours = [h for h in post if isinstance(h, dict) and HOOK_MARK in str(h.get("command", ""))]
+    if ours and all(h.get("command") == want for h in ours):
+        ch.skipped.append(("all tools", "already connected"))
+        return ch
+    if ours:
+        for h in ours:
+            h["command"] = want
+        ch.servers.append("all tools (repair outdated hook command)")
+    else:
+        post.append({"command": want, "timeout": 10})
+        ch.servers.append("all tools (built-in; MCP stays on the wrapped servers)")
+    ch.data = new
+    return ch
+
+
+def plan_cursor_unhook() -> Change | None:
+    path = cursor_hooks_file()
+    if not path.is_file():
+        return None
+    data, _ = read_json(path)
+    if data is None or not any(HOOK_MARK in str((h or {}).get("command", ""))
+                               for h in _cursor_entries(data)):
+        return None
+    new = json.loads(json.dumps(data))
+    kept = [h for h in _cursor_entries(new) if HOOK_MARK not in str((h or {}).get("command", ""))]
+    if kept:
+        new["hooks"]["postToolUse"] = kept
+    else:
+        new["hooks"].pop("postToolUse", None)
+    if new.get("hooks") == {} and set(new) <= {"version", "hooks"}:
+        ch = Change("Cursor (built-in tools)", "cursor", path, "remove")
+    else:
+        ch = Change("Cursor (built-in tools)", "cursor", path, "unhook", data=new)
     ch.servers.append("all tools hook")
     return ch
 
@@ -550,6 +680,10 @@ def cmd_init(args: argparse.Namespace) -> int:
         ch = plan_copilot_hook(exe)
         if ch:
             changes.append(ch)
+    if _wanted("cursor", only):
+        ch = plan_cursor_hook(exe)
+        if ch:
+            changes.append(ch)
     seen: set[Path] = set()
     for f in mcp_files(project):
         if not _wanted(f.client, only) or f.path in seen:
@@ -561,7 +695,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     if not changes:
         print("hypothesise: no supported agent apps found on this machine.")
-        print("  looked for: Claude Code (~/.claude), Claude Desktop, Cursor, VS Code")
+        print("  looked for: Claude Code (~/.claude), Claude Desktop, Cursor, VS Code, Antigravity")
         print("  add an MCP server to one of them, then run `hypothesise init` again.")
         return 1
 
@@ -603,6 +737,10 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
             changes.append(ch)
     if _wanted("vscode", only):
         ch = plan_copilot_unhook()
+        if ch:
+            changes.append(ch)
+    if _wanted("cursor", only):
+        ch = plan_cursor_unhook()
         if ch:
             changes.append(ch)
     seen: set[Path] = set()
@@ -661,6 +799,14 @@ def cmd_status(args: argparse.Namespace) -> int:
         data, _ = read_json(f) if f.is_file() else (None, "")
         on = data is not None and HOOK_MARK in json.dumps(data)
         print(f"  {'VS Code Copilot hook':<26} "
+              f"{'connected (built-in tools)' if on else 'not connected'}")
+    if cursor_present():
+        found = True
+        f = cursor_hooks_file()
+        data, _ = read_json(f) if f.is_file() else (None, "")
+        on = data is not None and any(HOOK_MARK in str((h or {}).get("command", ""))
+                                      for h in _cursor_entries(data))
+        print(f"  {'Cursor hook':<26} "
               f"{'connected (built-in tools)' if on else 'not connected'}")
     seen: set[Path] = set()
     for f in mcp_files(project):

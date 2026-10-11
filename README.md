@@ -47,7 +47,8 @@ and asks before changing anything:
 |---|---|---|
 | **Claude Code** | a hook in `~/.claude/settings.json` | every tool: Bash, Read, Edit, WebFetch… *and* MCP tools |
 | **Claude Desktop** | each MCP server wrapped in place | MCP tool calls |
-| **Cursor** | each MCP server wrapped in place | MCP tool calls |
+| **Cursor** | each MCP server wrapped in place **+** a hook in `~/.cursor/hooks.json` | every tool: built-in read/edit/terminal *and* MCP |
+| **Antigravity** | each MCP server wrapped in place (`~/.gemini/config/mcp_config.json`) | MCP tool calls — its built-in tools have no hooks yet |
 | **VS Code (Copilot)** | each MCP server wrapped in place **+** a Copilot agent hook (`~/.copilot/hooks/`) | every tool: built-in read/edit/terminal *and* MCP |
 
 Server names, tool names and settings stay exactly as they were. Every file is
@@ -71,7 +72,8 @@ It ships live to the dashboard, catches chains across servers inline, and
 spools if the dashboard is closed. An old `-m weaver proxy` entry is upgraded
 to this form by `hypothesise init`.
 
-Then use your agents as normal, and when you want to look:
+Then use your agents as normal, and when you want to look (if port 8080 is
+taken — common on Windows — it picks the next free one and tells you):
 
 ```bash
 hypothesise api          # dashboard at http://127.0.0.1:8080
@@ -83,7 +85,7 @@ read in the next time you open it.
 ```bash
 hypothesise status       # what is connected, what has been recorded
 hypothesise uninstall    # put every config back exactly as it was
-hypothesise api --demo   # just looking? a dashboard full of sample attacks
+hypothesise api --demo   # just looking? sample attacks, in a separate demo database
 ```
 
 ## What it does — and does not — do
@@ -95,10 +97,10 @@ hypothesise api --demo   # just looking? a dashboard full of sample attacks
   server falls back to running unwrapped.
 - **Every alert is a sentence**, e.g. *"read file:///app/.env (secret) at step
   2, then external request to https://collector.example.net at step 3."*
-- **What it cannot see:** Cursor's *built-in* file and terminal tools never go
-  through MCP and Cursor has no hook for them, so only its MCP servers are
-  watched. VS Code Copilot's built-ins are covered by its agent hook (needs
-  `chat.useHooks`, on by default). Remote
+- **What it cannot see:** Antigravity's *built-in* file, terminal and browser
+  tools — it has no hooks, so only its MCP servers are watched. Claude Code,
+  Copilot (needs `chat.useHooks`, on by default) and Cursor are covered by
+  their hooks. Remote
   (HTTP) MCP servers are listed but not yet intercepted. Claude Code is
   covered completely through its hook.
 - **Blocking is per server.** A chain that crosses two MCP servers ("read a

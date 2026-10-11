@@ -1,6 +1,6 @@
 [project]
 name = "hypothesise-langgraph"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Hypothesise LangGraph callback adapter (M4)"
 requires-python = ">=3.10"
 dependencies = ["hypothesise-core"]
