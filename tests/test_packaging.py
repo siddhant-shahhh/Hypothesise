@@ -171,3 +171,12 @@ def test_dev_setup_checks_for_shadowing_before_installing():
     setup = (ROOT / "scripts" / "dev-setup.sh").read_text()
     assert "shadowing" in setup
     assert "site-packages" in setup
+
+
+def test_readme_links_work_on_pypi():
+    """PyPI renders the README with no repository around it, so a relative
+    link like docs/PRIMER.md is a dead link on the project page."""
+    readme = (ROOT / "README.md").read_text()
+    links = re.findall(r"\]\(([^)]+)\)", readme)
+    relative = [x for x in links if not x.startswith(("http://", "https://", "#", "mailto:"))]
+    assert not relative, f"relative links break on PyPI: {relative}"

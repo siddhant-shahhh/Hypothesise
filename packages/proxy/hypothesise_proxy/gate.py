@@ -35,8 +35,10 @@ class GateConfig:
 
     @classmethod
     def from_env(cls) -> GateConfig:
+        from .settings import mode
+
         return cls(
-            mode=os.environ.get("HYPOTHESISE_MODE", "observe").lower(),
+            mode=mode("observe"),
             fail_mode=os.environ.get("HYPOTHESISE_FAIL_MODE", "open").lower(),
             budget_ms=int(os.environ.get("HYPOTHESISE_DECISION_BUDGET_MS", "50")),
         )

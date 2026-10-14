@@ -28,7 +28,7 @@ def test_help_tells_a_stranger_where_to_start(capsys):
 
 def test_version(capsys):
     assert main(["version"]) == 0
-    assert "hypothesise 0.1.0a2" in capsys.readouterr().out
+    assert "hypothesise 0.1.0a3" in capsys.readouterr().out
 
 
 def test_no_subcommand_is_an_error():

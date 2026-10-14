@@ -1068,3 +1068,42 @@ Added:
 Unverified until a real run: Cursor's exact MCP tool-name prefix (the skip
 assumes `mcp_`), and whether Cursor also loads our Claude Code hook as a
 "third-party hook", which would record its calls twice under two agent ids.
+
+### ADR-041 — 0.1.0a3: `hypothesise mode`, block popups, working links on PyPI
+
+**Status:** accepted · 2026-10-14
+
+**Context.** Switching to enforce meant editing every wrapped server's
+environment or the proxy config by hand, and a block was visible only as an
+error inside the agent's transcript, which the user often never reads. The
+README's relative links (`docs/PRIMER.md`) 404 on the PyPI project page.
+
+**Decision.**
+
+1. **`hypothesise mode observe|enforce`** writes `~/.hypothesise/settings.json`.
+   Precedence: `HYPOTHESISE_MODE` env > settings file > proxy config `mode` >
+   observe. A broken settings file reads as observe — the safe side.
+2. **Live switch.** Every proxy/wrapped server polls the file's mtime every 2 s
+   and updates its gate; the gate already reads mode per call, so nothing
+   restarts. Switching to enforce also starts an approval client (the
+   dashboard URL from settings), because ASK without a reachable dashboard
+   would be denied — `mode enforce` warns when `/healthz` is unreachable and
+   reports the Shadow `would_block` count first.
+3. **Popup on block.** A BLOCK verdict or a denied/timed-out approval calls
+   `notify.blocked()`: osascript on macOS, a PowerShell toast (MessageBox
+   fallback) on Windows, `notify-send` on Linux. Detached process, rate-limited
+   to one per 4 s with the rest counted, never raises — the data plane must not
+   wait on a desktop UI. Text reaches PowerShell through environment variables,
+   never by string interpolation. `--no-popup` / `HYPOTHESISE_NOTIFY=0` disable it.
+4. **Hooks stay observe-only.** They run after the tool; enforce there would be
+   a promise we cannot keep.
+5. **LangGraph handler spools by default**, so its events reach the dashboard
+   like every other path (`on_event=None` disables).
+6. **README links are absolute GitHub URLs**, guarded by a packaging test.
+7. **Tests never touch the real home folder** — an autouse fixture points
+   `HYPOTHESISE_HOME` at a temp dir and clears the mode/API/notify variables.
+
+**Consequences.** One command arms every connected server; the user learns of
+a block when it happens. Popups are unverified on a real Windows toast stack
+and on Linux desktops without a notification daemon.
+

@@ -12,7 +12,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-__version__ = "0.1.0a2"
+__version__ = "0.1.0a3"
 
 _EXPORTS = {
     "ProxyConfig": "config", "EventEmitter": "emit", "Gate": "gate",

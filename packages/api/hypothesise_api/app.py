@@ -24,7 +24,7 @@ STATIC = Path(__file__).parent / "static"
 
 def create_app(db_url: str | None = None, engine: Engine | None = None,
                webhook_url: str | None = None) -> FastAPI:
-    app = FastAPI(title="Hypothesise", version="0.1.0a2",
+    app = FastAPI(title="Hypothesise", version="0.1.0a3",
                   description="Behavioural security layer for AI agents")
 
     db = get_engine(db_url or os.environ.get("HYPOTHESISE_DB_URL"))
@@ -247,7 +247,7 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
         """Liveness. Deliberately touches nothing — it answers 'is the process
         up', and a health check that queries the database turns a slow query
         into an outage."""
-        return JSONResponse({"ok": True, "version": "0.1.0a2"})
+        return JSONResponse({"ok": True, "version": "0.1.0a3"})
 
     @app.get("/readyz")
     def readyz() -> JSONResponse:

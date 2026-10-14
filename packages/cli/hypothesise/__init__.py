@@ -7,5 +7,5 @@ stays (ADR-005: the engine imports nothing, and stays separable), but users
 install and learn one thing (ADR-027).
 """
 
-__version__ = "0.1.0a2"
+__version__ = "0.1.0a3"
 __all__ = ["__version__"]

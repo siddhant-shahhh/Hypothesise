@@ -348,7 +348,7 @@ able to read it — that is true with or without Hypothesise.
 
 ## Do not
 
-- Set `mode: enforce` until Shadow has been clean for two weeks
+- Run `hypothesise mode enforce` only once Shadow has been clean for two weeks
 - Commit `uris/.vscode/mcp.json` (gitignored) or `AI_Layer/hypothesise.config.json`
 - Expose port 8080 — there is no authentication yet (ADR-009)
 

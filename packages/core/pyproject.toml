@@ -1,6 +1,6 @@
 [project]
 name = "hypothesise-core"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "Hypothesise detection engine — zero I/O, zero framework deps (ADR-005)"
 requires-python = ">=3.10"
 dependencies = []

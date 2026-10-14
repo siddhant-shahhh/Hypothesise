@@ -37,6 +37,18 @@ hypothesise migrate [--check] [--db URL]
 hypothesise version
 ```
 
+## Observe and enforce
+
+```bash
+hypothesise mode                 # current mode, approvals URL, popups, settings path
+hypothesise mode enforce         # all connected MCP servers block, within ~2 s, no restart
+hypothesise mode enforce --api http://127.0.0.1:8765 --no-popup
+hypothesise mode observe
+```
+
+Stored in `~/.hypothesise/settings.json`; `HYPOTHESISE_MODE` overrides it.
+Popups on block can also be silenced with `HYPOTHESISE_NOTIFY=0`. ADR-041.
+
 ## Database and migrations
 
 Default location `~/.hypothesise/hypothesise.db`, overridable with `HYPOTHESISE_HOME` or

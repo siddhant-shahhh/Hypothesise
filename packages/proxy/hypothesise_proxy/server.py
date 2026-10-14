@@ -36,6 +36,7 @@ from hypothesise_core.events import (
 )
 from hypothesise_core.graph.model import GraphSnapshot
 
+from . import notify
 from . import protocol as p
 from .approval import ApprovalClient
 from .config import ProxyConfig
@@ -46,7 +47,7 @@ from .spooler import Spooler
 from .sync import ControlPlaneSync
 from .upstream import Upstream
 
-SERVER_INFO = {"name": "hypothesise-proxy", "version": "0.1.0a2"}
+SERVER_INFO = {"name": "hypothesise-proxy", "version": "0.1.0a3"}
 
 
 def _error_text(resp: dict[str, Any]) -> str:
@@ -234,6 +235,7 @@ class HypothesiseProxy:
         if decision.verdict is Verdict.BLOCK:
             event.outcome = Outcome(status=Status.BLOCKED)
             self.emitter.emit(event)
+            notify.blocked(decision.sentence, self.agent_id, f"{server}/{real}")
             # A structured error, so the agent can tell its operator WHY rather
             # than just failing opaquely.
             return p.error(mid, p.BLOCKED_BY_POLICY, decision.sentence, {
@@ -267,6 +269,7 @@ class HypothesiseProxy:
                         budget_ms=decision.budget_ms)
                     event.outcome = Outcome(status=Status.BLOCKED)
                     self.emitter.emit(event)
+                    notify.blocked(event.decision.sentence, self.agent_id, f"{server}/{real}")
                     code = (p.APPROVAL_DENIED if outcome.state == "denied"
                             else p.APPROVAL_TIMEOUT)
                     return p.error(mid, code, event.decision.sentence, {
@@ -326,8 +329,36 @@ class HypothesiseProxy:
             sys.stdout.buffer.write(p.encode(msg))
             sys.stdout.buffer.flush()
 
+    async def _watch_settings(self, interval: float = 2.0) -> None:
+        """Follow `hypothesise mode` while running (ADR-041).
+
+        The gate reads its mode on every call, so flipping it here takes effect
+        on the very next tool call — no restart of the user's agent app. An
+        explicit HYPOTHESISE_MODE in the environment wins and is left alone.
+        """
+        import os
+
+        from . import settings
+
+        seen = settings.mtime()
+        while True:
+            await asyncio.sleep(interval)
+            now = settings.mtime()
+            if now == seen or os.environ.get("HYPOTHESISE_MODE"):
+                continue
+            seen = now
+            new = settings.mode("observe")
+            if new != self.gate.config.mode:
+                self.gate.config.mode = new
+                print(f"hypothesise: mode is now {new}", file=sys.stderr)
+            if new == "enforce" and self.approvals is None:
+                url = settings.api_url("")
+                if url:
+                    self.approvals = ApprovalClient(url, ttl=self.config.ask_timeout)
+
     async def run(self) -> None:
         await self.start_upstreams()
+        watcher = asyncio.create_task(self._watch_settings())
         if self.shipper:
             self.shipper.start()
             print(f"hypothesise: shipping events to {self.shipper.endpoint}", file=sys.stderr)
@@ -359,6 +390,7 @@ class HypothesiseProxy:
                 if reply is not None:
                     await self._write(reply)
         finally:
+            watcher.cancel()
             if self.sync:
                 await self.sync.stop()
             if self.shipper:

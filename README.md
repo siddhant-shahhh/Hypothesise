@@ -27,10 +27,6 @@ pipx install hypothesise
 pip install hypothesise
 ```
 
-> **Not on PyPI yet.** Until the first release, install from a checkout of
-> this repository instead: `uv tool install /path/to/AI_Layer` (or
-> `pipx install /path/to/AI_Layer`).
->
 > Mind the spelling: **hypothesis**e. `hypothesis` (a testing library) and
 > `hypothesize` (a statistics package) are unrelated projects.
 
@@ -88,6 +84,23 @@ hypothesise uninstall    # put every config back exactly as it was
 hypothesise api --demo   # just looking? sample attacks, in a separate demo database
 ```
 
+## Observe and enforce
+
+Everything starts in **observe** mode: every call is recorded and scored,
+nothing is blocked, and the dashboard's *Shadow* tab shows what enforce mode
+*would* have stopped. When that list is clean on your ordinary work:
+
+```bash
+hypothesise mode enforce    # every connected MCP server blocks dangerous calls — no restart
+hypothesise mode observe    # back to safe
+hypothesise mode            # show the current mode
+```
+
+In enforce mode a blocked action raises a desktop notification saying which
+agent tried what, and why (`--no-popup` turns it off). Keep `hypothesise api`
+running: calls that need approval are denied when nobody can approve them.
+Agent hooks (built-in tools) always observe — they run after the tool.
+
 ## What it does — and does not — do
 
 - **Observe mode by default.** A fresh install records and scores everything
@@ -127,13 +140,14 @@ python scripts/ops/drills.py              # safety guarantees
 
 | Document | What's in it |
 |---|---|
-| [`docs/PRIMER.md`](docs/PRIMER.md) | the whole project in ten minutes |
-| [`docs/HYPOTHESISE.md`](docs/HYPOTHESISE.md) | the complete guide |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | design, graph schema, risk math |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | why anything is the way it is (ADRs) |
-| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | running it, releasing it |
+| [`docs/GUIDE.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/GUIDE.md) | everything end to end: every integration, the architecture, modes, troubleshooting |
+| [`docs/PRIMER.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/PRIMER.md) | the whole project in ten minutes |
+| [`docs/HYPOTHESISE.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/HYPOTHESISE.md) | the complete guide |
+| [`docs/ARCHITECTURE.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/ARCHITECTURE.md) | design, graph schema, risk math |
+| [`docs/DECISIONS.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/DECISIONS.md) | why anything is the way it is (ADRs) |
+| [`docs/OPERATIONS.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/OPERATIONS.md) | running it, releasing it |
 
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE). Copyright 2026 Siddhant Shah.
+Licensed under the [Apache License 2.0](https://github.com/siddhant-shahhh/Hypothesise/blob/master/LICENSE). Copyright 2026 Siddhant Shah.

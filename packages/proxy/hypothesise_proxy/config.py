@@ -65,8 +65,11 @@ class ProxyConfig:
         # Environment overrides the file. Documented that way, and it is what
         # people expect — you should be able to flip a single run to enforce
         # without editing a config that is probably in version control.
+        from . import settings
+
         gate = GateConfig(
-            mode=os.environ.get("HYPOTHESISE_MODE", g.get("mode", "observe")).lower(),
+            # env > `hypothesise mode` > this file > observe (ADR-041)
+            mode=settings.mode(str(g.get("mode", "observe")).lower()),
             fail_mode=os.environ.get(
                 "HYPOTHESISE_FAIL_MODE", g.get("failMode", "open")).lower(),
             budget_ms=int(os.environ.get(
@@ -78,6 +81,7 @@ class ProxyConfig:
             rules=list(raw.get("rules") or g.get("rules") or []),
             agent_id=g.get("agentId", ""),
             queue_maxsize=int(g.get("queueMaxsize", 10_000)),
-            api_url=os.environ.get("HYPOTHESISE_API_URL", g.get("apiUrl", "")),
+            api_url=os.environ.get("HYPOTHESISE_API_URL") or g.get("apiUrl", "")
+            or settings.api_url(""),
             ask_timeout=float(g.get("askTimeoutSeconds", 120)),
         )

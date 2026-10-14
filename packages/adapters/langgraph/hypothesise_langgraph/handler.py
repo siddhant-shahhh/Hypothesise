@@ -73,6 +73,12 @@ def _resource_from(tool_name: str, payload: Any) -> str:
     return ""
 
 
+def _spool_event(event: Event) -> None:
+    from hypothesise_proxy.spool import append
+
+    append([event.to_dict()])
+
+
 class HypothesiseCallbackHandler:
     """Duck-typed LangChain callback handler.
 
@@ -80,14 +86,19 @@ class HypothesiseCallbackHandler:
     you want strict typing; the method names are what LangChain dispatches on.
     """
 
-    def __init__(self, engine: Engine, agent_id: str = "langgraph-agent",
+    def __init__(self, engine: Engine | None = None, agent_id: str = "langgraph-agent",
                  session_id: str | None = None, raise_on_block: bool = False,
-                 on_event=None) -> None:
-        self.engine = engine
+                 on_event: Any = "spool") -> None:
+        self.engine = engine or Engine()
         self.agent_id = agent_id
         self.session_id = session_id or new_id("sess")
         self.raise_on_block = raise_on_block
-        self.on_event = on_event          # callable(Event) -> None, e.g. emitter.emit
+        # Default: record to the local spool, so a graph shows up in the
+        # dashboard with no extra wiring (ADR-041). Pass a callable to route
+        # events elsewhere, or None to record nothing.
+        if on_event == "spool":
+            on_event = _spool_event
+        self.on_event = on_event
         self.step = 0
         self._inflight: dict[str, Event] = {}
 

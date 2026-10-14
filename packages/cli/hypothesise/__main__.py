@@ -2,6 +2,7 @@
 
     hypothesise init                            connect the agent apps on this machine
     hypothesise status                          what is connected, what was recorded
+    hypothesise mode [observe|enforce]          switch every connected agent at once
     hypothesise api [--port 8080] [--demo]     dashboard (alias: dashboard)
     hypothesise uninstall                       restore every config init changed
     hypothesise proxy --config FILE [--detect] MCP interception from a config file
@@ -150,7 +151,6 @@ def _passthrough(cmd: list[str]) -> int:
 
 
 def _cmd_wrap(args: argparse.Namespace) -> int:
-    import os
 
     cmd = list(args.cmd)
     if cmd and cmd[0] == "--":
@@ -162,6 +162,7 @@ def _cmd_wrap(args: argparse.Namespace) -> int:
         import asyncio
 
         from hypothesise_core.engine import Engine
+        from hypothesise_proxy import settings as _settings
         from hypothesise_proxy.config import ProxyConfig
         from hypothesise_proxy.gate import GateConfig
         from hypothesise_proxy.server import HypothesiseProxy
@@ -171,7 +172,7 @@ def _cmd_wrap(args: argparse.Namespace) -> int:
             upstreams=[UpstreamConfig(name=args.server, command=cmd[0], args=cmd[1:])],
             gate=GateConfig.from_env(),
             agent_id=args.client,
-            api_url=os.environ.get("HYPOTHESISE_API_URL", ""),
+            api_url=_settings.api_url(""),
             session_id=_session_for(args.client),
         )
         if config.gate.enforcing and not config.api_url:
@@ -206,6 +207,12 @@ def _cmd_uninstall(args: argparse.Namespace) -> int:
     from hypothesise.clients import cmd_uninstall
 
     return cmd_uninstall(args)
+
+
+def _cmd_mode(args: argparse.Namespace) -> int:
+    from hypothesise.mode import cmd_mode
+
+    return cmd_mode(args)
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
@@ -318,6 +325,17 @@ def build_parser() -> argparse.ArgumentParser:
     st = sub.add_parser("status", help="what is connected, what has been recorded")
     st.add_argument("--project", default=None, metavar="DIR")
     st.set_defaults(fn=_cmd_status)
+
+    md = sub.add_parser("mode", help="show or switch observe / enforce for every connected agent")
+    md.add_argument("value", nargs="?", choices=["observe", "enforce"])
+    md.add_argument("--api", default=None, metavar="URL",
+                    help="dashboard that approves ASK decisions (default http://127.0.0.1:8080)")
+    pg = md.add_mutually_exclusive_group()
+    pg.add_argument("--popup", dest="popup", action="store_true", default=None,
+                    help="show an on-screen popup when an action is blocked (default)")
+    pg.add_argument("--no-popup", dest="popup", action="store_false",
+                    help="no popups; blocks still show on the dashboard")
+    md.set_defaults(fn=_cmd_mode)
 
     u = sub.add_parser("uninstall", help="restore every config that init changed")
     client_opts(u)
