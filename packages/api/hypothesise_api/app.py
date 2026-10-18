@@ -22,18 +22,65 @@ from hypothesise_store.repo import Repo
 STATIC = Path(__file__).parent / "static"
 
 
+def refresh_rules(app: FastAPI) -> None:
+    """Load the protection rules from `hypothesise mode` into this engine.
+
+    The dashboard judges hook events after the fact; without the rules, a
+    protected file read in observe mode showed as "matched baseline" instead of
+    "would have blocked" (ADR-042). Reloaded whenever settings.json changes.
+    """
+    try:
+        from hypothesise_core.policy.rules import RuleSet
+        from hypothesise_proxy import settings
+
+        m = settings.mtime()
+        if m != app.state.rules_mtime:
+            app.state.engine.rules = RuleSet.from_config(settings.rules())
+            app.state.rules_mtime = m
+    except Exception:  # noqa: BLE001 — rules are an addition, never a reason to stop ingest
+        pass
+
+
+def save_baselines(app: FastAPI, every: float = 30.0) -> None:
+    """Persist what the engine learned, at most every `every` seconds."""
+    import time
+
+    if not getattr(app.state, "persist_baselines", False):
+        return
+    now = time.monotonic()
+    if now - app.state.baselines_saved < every:
+        return
+    from hypothesise_proxy import baselines as _bl
+
+    if _bl.save_from(app.state.engine):
+        app.state.baselines_saved = now
+
+
 def create_app(db_url: str | None = None, engine: Engine | None = None,
                webhook_url: str | None = None) -> FastAPI:
-    app = FastAPI(title="Hypothesise", version="0.1.0a3",
+    app = FastAPI(title="Hypothesise", version="0.1.0a4",
                   description="Behavioural security layer for AI agents")
 
     db = get_engine(db_url or os.environ.get("HYPOTHESISE_DB_URL"))
     init_db(db)
     repo = Repo(engine=db)
-    eng = engine or Engine()
+    eng = engine or Engine.live()
+    app.state.persist_baselines = engine is None and not (db_url or os.environ.get("HYPOTHESISE_DB_URL"))
+    if app.state.persist_baselines:
+        from hypothesise_proxy import baselines as _bl
+
+        _bl.load_into(eng)
+    app.state.baselines_saved = 0.0
+    # Trust survives a dashboard restart the same way it survives a proxy
+    # restart (ADR-023); otherwise restarting the dashboard wiped every zone.
+    import contextlib
+    with contextlib.suppress(Exception):   # a fresh or odd database must not stop startup
+        eng.trust.load(repo.trust_rows())
 
     app.state.repo = repo
     app.state.engine = eng
+    app.state.rules_mtime = -1.0
+    refresh_rules(app)
     app.state.webhook = webhook_url or os.environ.get("HYPOTHESISE_WEBHOOK", "")
     # The engine holds session windows and baselines in memory and is not
     # thread-safe; HTTP ingest runs on a thread pool and the spool reader on
@@ -51,7 +98,9 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
         inline and a decision made on ingest are identical.
         """
         with app.state.ingest_lock:
+            refresh_rules(app)
             accepted, alerts = ingest_batch(repo, eng, batch)
+            save_baselines(app)
         return {"accepted": accepted, "alerts": alerts}
 
     # -- queries ------------------------------------------------------------
@@ -159,6 +208,7 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
         row = repo.restrict_agent(agent_id)
         if row is None:
             raise HTTPException(404, f"no such agent: {agent_id}")
+        eng.trust.load([row])
         _notify(app.state.webhook, {"type": "agent_restricted", **row})
         return row
 
@@ -234,8 +284,28 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
         row = repo.release_agent(agent_id)
         if row is None:
             raise HTTPException(404, f"no such agent: {agent_id}")
+        eng.trust.load([row])
         _notify(app.state.webhook, {"type": "agent_released", **row})
         return row
+
+    @app.get("/v1/settings")
+    def machine_settings() -> dict:
+        """What `hypothesise mode` set on this machine, for the Policies and
+        Settings tabs. The dashboard and every connected agent read the same
+        ~/.hypothesise/settings.json, so this is what is actually in force."""
+        try:
+            from hypothesise_proxy import settings as st
+            from hypothesise_proxy.spool import home
+
+            raw = st.load()
+            return {"mode": st.mode("observe"), "notify": st.notify_enabled(),
+                    "rules": st.rules(), "protections": raw.get("protections") or {},
+                    "home": str(home()), "webhook": app.state.webhook or "",
+                    "demo": bool(getattr(app.state, "demo", False))}
+        except Exception:  # noqa: BLE001
+            return {"mode": "observe", "notify": True, "rules": [], "protections": {},
+                    "home": "", "webhook": app.state.webhook or "",
+                    "demo": bool(getattr(app.state, "demo", False))}
 
     @app.get("/v1/shadow")
     def shadow(limit: int = Query(200, le=2000)) -> dict:
@@ -247,7 +317,7 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
         """Liveness. Deliberately touches nothing — it answers 'is the process
         up', and a health check that queries the database turns a slow query
         into an outage."""
-        return JSONResponse({"ok": True, "version": "0.1.0a3"})
+        return JSONResponse({"ok": True, "version": "0.1.0a4"})
 
     @app.get("/readyz")
     def readyz() -> JSONResponse:
@@ -304,10 +374,10 @@ def create_app(db_url: str | None = None, engine: Engine | None = None,
         lines += [
             "# HELP hypothesise_decision_latency_ms Mean decision latency the agent sees.",
             "# TYPE hypothesise_decision_latency_ms gauge",
-            f"hypothesise_decision_latency_ms {lat.get('mean', 0)}",
+            f"hypothesise_decision_latency_ms {lat.get('mean') or 0}",
             "# HELP hypothesise_decision_latency_max_ms Worst decision latency seen.",
             "# TYPE hypothesise_decision_latency_max_ms gauge",
-            f"hypothesise_decision_latency_max_ms {lat.get('max', 0)}",
+            f"hypothesise_decision_latency_max_ms {lat.get('max') or 0}",
             "# HELP hypothesise_decisions_near_budget_total Decisions within 10ms of the budget.",
             "# TYPE hypothesise_decisions_near_budget_total counter",
             f"hypothesise_decisions_near_budget_total {lat.get('near_budget', 0)}",
@@ -385,7 +455,9 @@ def ingest_spool_once(app: FastAPI, spool_dir: Path | None = None,
         records, offsets = reader.read(max_records=max_records)
         if records:
             with app.state.ingest_lock:
+                refresh_rules(app)
                 accepted, _ = ingest_batch(app.state.repo, app.state.engine, records)
+                save_baselines(app)
             total += accepted
         reader.commit(offsets)
         if len(records) < max_records:

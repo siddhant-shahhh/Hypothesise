@@ -93,6 +93,7 @@ class Gate:
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         self.stats.total_ms += elapsed_ms
         decision.budget_ms = int(elapsed_ms)
+        decision.elapsed_ms = elapsed_ms
 
         # --- observe mode: decide fully, enforce nothing ---------------------
         if decision.verdict is not Verdict.ALLOW and not self.config.enforcing:
@@ -103,6 +104,7 @@ class Gate:
                 detectors=decision.detectors,
                 sentence=f"[observe] would have {decision.verdict.value}ed: {decision.sentence}",
                 budget_ms=decision.budget_ms,
+                elapsed_ms=decision.elapsed_ms,
             )
             return shadow
 
@@ -114,6 +116,7 @@ class Gate:
                 detectors=decision.detectors,
                 sentence="[bug] block suppressed: engine produced no explanation",
                 budget_ms=decision.budget_ms,
+                elapsed_ms=decision.elapsed_ms,
             )
 
         if decision.verdict is Verdict.BLOCK:

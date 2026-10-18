@@ -18,7 +18,7 @@ from ..graph.model import (
     tool_node,
 )
 from ..risk.model import Signal, Weight
-from .base import DetectorContext, tier1
+from .base import DetectorContext, is_external_egress, tier1
 
 
 def _sig(ctx: DetectorContext, detector: str, weight: float, detail: str) -> Signal:
@@ -71,7 +71,7 @@ def sensitive_then_egress(ctx: DetectorContext) -> Signal | None:
     see scenarios/benign/secret_read_no_egress.yaml.
     """
     ev = ctx.event
-    if ev.action is not Action.EGRESS and ev.resource.cls is not ResourceClass.NETWORK_EGRESS:
+    if not is_external_egress(ev):
         return None
     for prior in reversed(ctx.window.recent(8)):
         if prior.event_id == ev.event_id:

@@ -39,7 +39,11 @@ def test_mode_command_round_trip(capsys):
 
     assert main(["mode", "enforce", "--no-popup"]) == 0
     s = settings.load()
-    assert s == {"mode": "enforce", "notify": False, "apiUrl": settings.DEFAULT_API}
+    assert {k: s[k] for k in ("mode", "notify", "apiUrl")} == {
+        "mode": "enforce", "notify": False, "apiUrl": settings.DEFAULT_API}
+    # No terminal in a test run: the safe defaults are used, never a prompt.
+    assert "secrets" in s["protections"]["chosen"]
+    assert any(r["match"].get("resource_class") == "secret" for r in s["rules"])
     out = capsys.readouterr().out
     assert "ENFORCE" in out and "not running" in out
     assert main(["mode"]) == 0

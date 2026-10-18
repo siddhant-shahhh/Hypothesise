@@ -49,6 +49,17 @@ hypothesise mode observe
 Stored in `~/.hypothesise/settings.json`; `HYPOTHESISE_MODE` overrides it.
 Popups on block can also be silenced with `HYPOTHESISE_NOTIFY=0`. ADR-041.
 
+Enabling enforce asks what agents must never touch and writes block rules; re-ask
+with `hypothesise mode enforce --setup` (ADR-042).
+
+```bash
+hypothesise reset               # delete recorded events/trust; keep connections & settings
+hypothesise release [--all]     # restore trust for agents after testing attacks
+```
+
+Upgrade: `uv tool upgrade hypothesise` (or `pipx upgrade` / `pip install -U`),
+then `hypothesise init` to repair hooks and restart the agent apps.
+
 ## Database and migrations
 
 Default location `~/.hypothesise/hypothesise.db`, overridable with `HYPOTHESISE_HOME` or

@@ -47,7 +47,7 @@ from .spooler import Spooler
 from .sync import ControlPlaneSync
 from .upstream import Upstream
 
-SERVER_INFO = {"name": "hypothesise-proxy", "version": "0.1.0a3"}
+SERVER_INFO = {"name": "hypothesise-proxy", "version": "0.1.0a4"}
 
 
 def _error_text(resp: dict[str, Any]) -> str:
@@ -249,15 +249,19 @@ class HypothesiseProxy:
 
         # --- ASK: suspend the call and wait for a human ----------------------
         if decision.verdict is Verdict.ASK:
+            if self.approvals is None and self.gate.config.enforcing:
+                # Enforcing with no dashboard: the question still comes to the
+                # screen (ADR-042); with no screen either, nobody can say yes.
+                self.approvals = ApprovalClient("", ttl=self.config.ask_timeout)
             if self.approvals is None:
-                # Nobody to ask. Flag it and let it through rather than
-                # pretending a human approved — enforce mode refuses to start
-                # without a control plane, so this only happens in observe.
+                # Nobody to ask, and not enforcing: flag it and let it through
+                # rather than pretending a human approved.
                 event.decision = Decision(
                     verdict=Verdict.ALLOW, score=decision.score,
                     detectors=decision.detectors,
                     sentence=f"[no-approver] {decision.sentence}",
-                    budget_ms=decision.budget_ms)
+                    budget_ms=decision.budget_ms,
+                    elapsed_ms=decision.elapsed_ms)
             else:
                 outcome = await self.approvals.request(event, decision.sentence)
                 if not outcome.approved:
@@ -266,7 +270,8 @@ class HypothesiseProxy:
                         detectors=decision.detectors,
                         sentence=f"{decision.sentence} Approval {outcome.state}: "
                                  f"{outcome.detail}.",
-                        budget_ms=decision.budget_ms)
+                        budget_ms=decision.budget_ms,
+                    elapsed_ms=decision.elapsed_ms)
                     event.outcome = Outcome(status=Status.BLOCKED)
                     self.emitter.emit(event)
                     notify.blocked(event.decision.sentence, self.agent_id, f"{server}/{real}")
@@ -281,7 +286,8 @@ class HypothesiseProxy:
                     verdict=Verdict.ALLOW, score=decision.score,
                     detectors=decision.detectors,
                     sentence=f"{decision.sentence} {outcome.detail.capitalize()}.",
-                    budget_ms=decision.budget_ms)
+                    budget_ms=decision.budget_ms,
+                    elapsed_ms=decision.elapsed_ms)
 
         # --- forward ---------------------------------------------------------
         up = self.upstreams.get(server)
@@ -347,6 +353,13 @@ class HypothesiseProxy:
             if now == seen or os.environ.get("HYPOTHESISE_MODE"):
                 continue
             seen = now
+            if self.engine is not None:
+                # Protection rules change with `hypothesise mode enforce
+                # --setup`; reload them alongside the mode (ADR-042).
+                from hypothesise_core.policy.rules import RuleSet
+
+                self.engine.rules = RuleSet.from_config(
+                    [*self.config.rules, *settings.rules()])
             new = settings.mode("observe")
             if new != self.gate.config.mode:
                 self.gate.config.mode = new

@@ -43,7 +43,7 @@ class ProxyConfig:
     agent_id: str = ""            # falls back to the client's own name
     queue_maxsize: int = 10_000
     api_url: str = ""             # empty = local-only, no control plane
-    ask_timeout: float = 120.0    # ASK deadline; expiry DENIES (ADR-017)
+    ask_timeout: float = 60.0     # ASK deadline; expiry DENIES (ADR-017; 60s since ADR-042)
     session_id: str = ""          # fixed by `hypothesise wrap`; random otherwise
 
     @classmethod
@@ -83,5 +83,5 @@ class ProxyConfig:
             queue_maxsize=int(g.get("queueMaxsize", 10_000)),
             api_url=os.environ.get("HYPOTHESISE_API_URL") or g.get("apiUrl", "")
             or settings.api_url(""),
-            ask_timeout=float(g.get("askTimeoutSeconds", 120)),
+            ask_timeout=float(g.get("askTimeoutSeconds", 60)),
         )

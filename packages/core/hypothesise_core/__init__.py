@@ -20,7 +20,7 @@ from .events import (
     utcnow,
 )
 
-__version__ = "0.1.0a3"
+__version__ = "0.1.0a4"
 
 __all__ = [
     "Action", "Decision", "Event", "Outcome", "Resource", "ResourceClass",

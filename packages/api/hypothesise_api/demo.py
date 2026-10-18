@@ -7,6 +7,7 @@ nothing interesting.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from hypothesise_core.engine import Engine
@@ -50,7 +51,9 @@ def load_demo(repo, engine: Engine) -> int:
         # what production does.
         engine.trust = TrustStore()
         for ev in sc.events:
+            started = time.perf_counter()
             decision, sigs = engine.evaluate(ev)
+            decision.elapsed_ms = (time.perf_counter() - started) * 1000.0
             ev.decision = decision
             repo.record(ev, sigs)
             n += 1

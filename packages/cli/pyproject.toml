@@ -2,7 +2,7 @@
 # Internal distribution name, never published. Only the root pyproject ships,
 # as `hypothesise` (ADR-034).
 name = "hypothesise-cli"
-version = "0.1.0a3"
+version = "0.1.0a4"
 description = "The hypothesise command — api, proxy, doctor, migrate"
 requires-python = ">=3.10"
 dependencies = ["hypothesise-core", "hypothesise-store", "hypothesise-proxy", "hypothesise-api"]

@@ -103,6 +103,10 @@ class Decision:
     sentence: str = ""
     budget_ms: int = 0
     fail_open: bool = False  # true if we allowed because the engine failed
+    # Measured decision time, sub-millisecond precision. `budget_ms` is an int
+    # kept for the wire format; on its own it rounded every real decision to 0
+    # and the dashboard showed "0.00 ms" (ADR-042).
+    elapsed_ms: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -112,6 +116,7 @@ class Decision:
             "sentence": self.sentence,
             "budget_ms": self.budget_ms,
             "fail_open": self.fail_open,
+            "elapsed_ms": round(self.elapsed_ms, 4),
         }
 
 
@@ -195,6 +200,7 @@ class Event:
                 sentence=dec_raw.get("sentence", ""),
                 budget_ms=int(dec_raw.get("budget_ms", 0)),
                 fail_open=bool(dec_raw.get("fail_open", False)),
+                elapsed_ms=float(dec_raw.get("elapsed_ms", 0.0) or 0.0),
             ),
         )
 

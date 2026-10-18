@@ -21,6 +21,10 @@ from ..events import Action, Event, ResourceClass
 from ..graph.model import agent_node, edge_key, resource_node, tool_node
 
 MIN_EVENTS_TO_ACTIVATE = 12
+# Live learning (ADR-042) activates much later than the training harness: a
+# baseline that turns on after 12 real calls calls the 13th unfamiliar thing an
+# anomaly. Two hundred clean calls is roughly a working session or two.
+LIVE_MIN_EVENTS = 200
 NGRAM_SIZES = (3, 4, 5)
 
 
@@ -55,6 +59,7 @@ class Baseline:
     arg_keysets: dict[str, set[str]] = field(default_factory=dict)   # tool -> seen key-sets (joined)
     arg_len: dict[str, tuple[int, float, float]] = field(default_factory=dict)  # tool -> (n, mean, M2)
     gap_stats: tuple[int, float, float] = (0, 0.0, 0.0)              # (n, mean, M2) seconds
+    activate_after: int = MIN_EVENTS_TO_ACTIVATE
 
     @property
     def is_active(self) -> bool:
@@ -91,8 +96,42 @@ class Baseline:
         if history:
             self._observe_gap(history[-1], ev)
 
-        if self.event_count >= MIN_EVENTS_TO_ACTIVATE:
+        if self.event_count >= self.activate_after:
             self.state = "active"
+
+    # -- persistence ----------------------------------------------------------
+
+    def to_dict(self) -> dict:
+        return {
+            "agent_id": self.agent_id, "state": self.state, "event_count": self.event_count,
+            "tools": dict(self.tools), "classes": dict(self.classes),
+            "edges": sorted(self.edges), "ngrams": sorted(self.ngrams),
+            "invoke_targets": sorted(self.invoke_targets),
+            "hours": {str(k): v for k, v in self.hours.items()},
+            "class_pairs": sorted([list(p) for p in self.class_pairs]),
+            "arg_keysets": {k: sorted(v) for k, v in self.arg_keysets.items()},
+            "arg_len": {k: list(v) for k, v in self.arg_len.items()},
+            "gap_stats": list(self.gap_stats),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict, activate_after: int = MIN_EVENTS_TO_ACTIVATE) -> Baseline:
+        b = cls(agent_id=str(d.get("agent_id", "")), activate_after=activate_after)
+        b.event_count = int(d.get("event_count", 0))
+        b.tools = Counter(d.get("tools") or {})
+        b.classes = Counter(d.get("classes") or {})
+        b.edges = set(d.get("edges") or [])
+        b.ngrams = set(d.get("ngrams") or [])
+        b.invoke_targets = set(d.get("invoke_targets") or [])
+        b.hours = Counter({int(k): int(v) for k, v in (d.get("hours") or {}).items()})
+        b.class_pairs = {tuple(p) for p in d.get("class_pairs") or [] if len(p) == 2}
+        b.arg_keysets = {k: set(v) for k, v in (d.get("arg_keysets") or {}).items()}
+        b.arg_len = {k: (int(v[0]), float(v[1]), float(v[2]))
+                     for k, v in (d.get("arg_len") or {}).items() if len(v) == 3}
+        g = d.get("gap_stats") or [0, 0.0, 0.0]
+        b.gap_stats = (int(g[0]), float(g[1]), float(g[2]))
+        b.state = "active" if b.event_count >= activate_after else "learning"
+        return b
 
     # -- tier 2 accumulators ------------------------------------------------
 
@@ -174,14 +213,17 @@ def _seconds_between(a: str, b: str) -> float | None:
 
 
 class BaselineStore:
-    """In-memory baselines keyed by agent. Persisted in M3."""
+    """Baselines keyed by agent. `activate_after` is MIN_EVENTS_TO_ACTIVATE for
+    the training harness and LIVE_MIN_EVENTS for live learning (ADR-042)."""
 
-    def __init__(self) -> None:
+    def __init__(self, activate_after: int = MIN_EVENTS_TO_ACTIVATE) -> None:
         self._by_agent: dict[str, Baseline] = {}
+        self.activate_after = activate_after
 
     def get(self, agent_id: str) -> Baseline:
         if agent_id not in self._by_agent:
-            self._by_agent[agent_id] = Baseline(agent_id=agent_id)
+            self._by_agent[agent_id] = Baseline(agent_id=agent_id,
+                                                activate_after=self.activate_after)
         return self._by_agent[agent_id]
 
     def observe(self, ev: Event, history: list[Event] | None = None) -> None:
@@ -192,6 +234,17 @@ class BaselineStore:
         for b in self._by_agent.values():
             if b.event_count > 0:
                 b.state = "active"
+
+    def to_list(self) -> list[dict]:
+        return [b.to_dict() for b in self._by_agent.values() if b.event_count]
+
+    def load_list(self, rows: list[dict]) -> int:
+        n = 0
+        for r in rows or []:
+            if isinstance(r, dict) and r.get("agent_id"):
+                self._by_agent[r["agent_id"]] = Baseline.from_dict(r, self.activate_after)
+                n += 1
+        return n
 
     def __len__(self) -> int:
         return len(self._by_agent)

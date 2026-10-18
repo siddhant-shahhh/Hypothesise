@@ -28,7 +28,7 @@ def test_help_tells_a_stranger_where_to_start(capsys):
 
 def test_version(capsys):
     assert main(["version"]) == 0
-    assert "hypothesise 0.1.0a3" in capsys.readouterr().out
+    assert "hypothesise 0.1.0a4" in capsys.readouterr().out
 
 
 def test_no_subcommand_is_an_error():
@@ -56,14 +56,22 @@ def test_migrate_check_exit_code_signals_pending(capsys, tmp_path):
     assert "up to date" in capsys.readouterr().out
 
 
-def test_proxy_refuses_enforce_without_a_control_plane(tmp_path, capsys):
-    """Nobody to ask means ASK has no honest meaning (ADR-017)."""
+def test_proxy_starts_enforcing_without_a_control_plane(tmp_path, capsys, monkeypatch):
+    """ADR-042 supersedes ADR-017's refusal: a proxy that will not start is a
+    broken server in the agent app. Blocks still apply; ASK is denied (see
+    test_ask_without_approver_is_denied_in_enforce_mode)."""
     import json
 
+    from hypothesise_proxy.server import HypothesiseProxy
+
+    async def no_run(self):
+        return None
+
+    monkeypatch.setattr(HypothesiseProxy, "run", no_run)
     cfg = tmp_path / "c.json"
     cfg.write_text(json.dumps({"mcpServers": {}, "hypothesise": {"mode": "enforce"}}))
-    assert main(["proxy", "--config", str(cfg)]) == 2
-    assert "enforce mode needs a control plane" in capsys.readouterr().err
+    assert main(["proxy", "--config", str(cfg)]) == 0
+    assert "enforce mode without a dashboard" in capsys.readouterr().err
 
 
 def test_proxy_reports_a_missing_config(tmp_path, capsys):

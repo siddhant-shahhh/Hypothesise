@@ -30,6 +30,23 @@ pip install hypothesise
 > Mind the spelling: **hypothesis**e. `hypothesis` (a testing library) and
 > `hypothesize` (a statistics package) are unrelated projects.
 
+## Upgrade
+
+```bash
+uv tool upgrade hypothesise     # or: pipx upgrade hypothesise · pip install -U hypothesise
+hypothesise init                # repairs hooks for the new version; "nothing to change" if fine
+```
+
+Then fully restart your agent apps so they load the new code.
+
+## Uninstall
+
+```bash
+hypothesise uninstall           # restore every config init changed (backed up first)
+uv tool uninstall hypothesise   # or: pipx uninstall hypothesise · pip uninstall hypothesise
+rm -rf ~/.hypothesise           # optional: also delete all recorded data
+```
+
 ## Connect your agents
 
 ```bash
@@ -96,10 +113,23 @@ hypothesise mode observe    # back to safe
 hypothesise mode            # show the current mode
 ```
 
-In enforce mode a blocked action raises a desktop notification saying which
-agent tried what, and why (`--no-popup` turns it off). Keep `hypothesise api`
-running: calls that need approval are denied when nobody can approve them.
-Agent hooks (built-in tools) always observe — they run after the tool.
+The first time you enable enforce, Hypothesise asks a few questions — what
+agents must never touch (passwords and keys, SSH and cloud logins, browser
+data, mail and messages, photos, personal folders, bulk-delete commands) — and
+turns the answers into block rules. A code folder inside Documents can be kept
+open. Re-ask any time with `hypothesise mode enforce --setup`.
+
+In enforce mode a blocked action raises a desktop popup saying which agent
+tried what, and why (`--no-popup` turns it off). An action that needs approval
+shows an Allow / Block dialog on screen; keep `hypothesise api` running so you
+can also approve from the dashboard. Built-in IDE tools are blocked before they
+run for protection rules and critical sequences; everything else there is
+observed.
+
+```bash
+hypothesise reset               # delete recorded data, keep connections & settings
+hypothesise release --all       # restore trust after testing attacks
+```
 
 ## What it does — and does not — do
 
@@ -141,6 +171,7 @@ python scripts/ops/drills.py              # safety guarantees
 | Document | What's in it |
 |---|---|
 | [`docs/GUIDE.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/GUIDE.md) | everything end to end: every integration, the architecture, modes, troubleshooting |
+| [`docs/EVIDENCE.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/EVIDENCE.md) | measured detection, false positives and latency vs a denylist and Invariant |
 | [`docs/PRIMER.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/PRIMER.md) | the whole project in ten minutes |
 | [`docs/HYPOTHESISE.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/HYPOTHESISE.md) | the complete guide |
 | [`docs/ARCHITECTURE.md`](https://github.com/siddhant-shahhh/Hypothesise/blob/master/docs/ARCHITECTURE.md) | design, graph schema, risk math |

@@ -76,3 +76,14 @@ def notify_enabled() -> bool:
     if env in ("0", "false", "no", "off"):
         return False
     return bool(load().get("notify", True))
+
+
+def rules() -> list[dict[str, Any]]:
+    """Personal-data rules written by `hypothesise mode enforce` (ADR-042).
+
+    Applied by every wrapped server, proxy entry and blocking hook, on top of
+    any rules in a proxy's own config file. A broken entry is skipped by the
+    rule loader, so a hand-edited file cannot take protection down with it.
+    """
+    raw = load().get("rules")
+    return [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []

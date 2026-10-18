@@ -27,7 +27,7 @@ from hypothesise_core.risk.model import (
     hours_between,
     reinforce,
 )
-from sqlalchemy import Engine, delete, func, insert, select, update
+from sqlalchemy import Engine, case, delete, func, insert, select, update
 
 from .schema import (
     agents,
@@ -52,6 +52,18 @@ def _expired(expires_at: str | None) -> bool:
         return datetime.fromisoformat(expires_at) < datetime.now(timezone.utc)
     except (ValueError, TypeError):
         return False
+
+
+
+def _would(sentence: str | None) -> str:
+    """The verdict an observe-mode sentence says enforce mode would have given."""
+    return "block" if "would have block" in (sentence or "") else "ask"
+
+
+def _pct(sorted_vals: list[float], q: float) -> float:
+    """Nearest-rank percentile of an already sorted list."""
+    i = max(0, min(len(sorted_vals) - 1, int(round(q * len(sorted_vals) + 0.5)) - 1))
+    return sorted_vals[i]
 
 
 @dataclass
@@ -81,6 +93,7 @@ class Repo:
                 detectors=json.dumps(ev.decision.detectors),
                 sentence=ev.decision.sentence, budget_ms=ev.decision.budget_ms,
                 fail_open=int(ev.decision.fail_open), mode=mode,
+                elapsed_ms=float(ev.decision.elapsed_ms or 0.0),
             ))
             if args is not None:
                 conn.execute(insert(event_args).values(
@@ -188,6 +201,9 @@ class Repo:
             "nodes": [{
                 "id": r.id, "kind": r.kind, "class": r._mapping["class"],
                 "label": r.label, "risk": round(self._decayed(r), 4),
+                # Without the floor the dashboard drew every secret ever
+                # touched as a "reinforced" path, flagged or not (ADR-042).
+                "risk_floor": round(float(r.risk_floor or 0.0), 4),
                 "confidence": round(r.confidence, 4),
                 "observations": r.observations, "last_seen": r.last_seen,
             } for r in nrows],
@@ -214,7 +230,8 @@ class Repo:
                     select(func.count()).select_from(decisions)
                     .join(events, events.c.event_id == decisions.c.event_id)
                     .where(events.c.session_id == r.session_id,
-                           decisions.c.verdict != Verdict.ALLOW.value)
+                           (decisions.c.verdict != Verdict.ALLOW.value)
+                           | decisions.c.sentence.like("[observe]%"))
                 ).scalar() or 0
                 out.append({"session_id": r.session_id, "agent_id": r.agent_id,
                             "events": r.n, "started": r.started, "ended": r.ended,
@@ -247,11 +264,18 @@ class Repo:
                        events.c.tool_server, events.c.tool_name,
                        events.c.resource_uri, events.c.step)
                 .join(events, events.c.event_id == decisions.c.event_id)
-                .where(decisions.c.verdict != Verdict.ALLOW.value)
+                .where((decisions.c.verdict != Verdict.ALLOW.value)
+                       | decisions.c.sentence.like("[observe]%"))
                 .order_by(decisions.c.ts.desc()).limit(limit)
             ).fetchall()
+        # Observe-mode interventions are alerts too, but they must never read
+        # as blocks that happened: `enforced` says which is which, and
+        # `verdict` for a would-be one is what enforce mode WOULD have done.
         return [{
-            "event_id": r.event_id, "ts": r.ts, "verdict": r.verdict,
+            "event_id": r.event_id, "ts": r.ts,
+            "verdict": r.verdict if r.verdict != Verdict.ALLOW.value
+            else _would(r.sentence),
+            "enforced": r.verdict != Verdict.ALLOW.value,
             "score": r.score, "sentence": r.sentence,
             "detectors": json.loads(r.detectors) if r.detectors else [],
             "agent_id": r.agent_id, "session_id": r.session_id, "step": r.step,
@@ -282,28 +306,46 @@ class Repo:
             # Decision latency is what the AGENT feels. Past the gate's budget
             # it fails open and detection stops silently, so this is the number
             # that says whether the tool is still doing anything under load.
-            lat = conn.execute(
-                select(func.avg(decisions.c.budget_ms),
-                       func.max(decisions.c.budget_ms),
-                       func.count())
-                .where(decisions.c.budget_ms > 0)
-            ).first()
+            times = sorted(
+                float(r[0]) for r in conn.execute(
+                    select(decisions.c.elapsed_ms).where(decisions.c.elapsed_ms > 0)
+                ).fetchall())
             slow = conn.execute(
                 select(func.count()).select_from(decisions)
-                .where(decisions.c.budget_ms >= 40)
+                .where(decisions.c.elapsed_ms >= 40)
             ).scalar() or 0
+            would = dict(conn.execute(
+                select(case((decisions.c.sentence.like("[observe] would have block%"),
+                             "block"), else_="ask"), func.count())
+                .where(decisions.c.sentence.like("[observe]%"))
+                .group_by(case((decisions.c.sentence.like("[observe] would have block%"),
+                                "block"), else_="ask"))
+            ).fetchall())
+            today_prefix = utcnow()[:10]
+            today = conn.execute(
+                select(func.count()).select_from(events)
+                .where(events.c.ts.like(f"{today_prefix}%"))
+            ).scalar() or 0
+            activity = self._activity(conn)
             failed_open = conn.execute(
                 select(func.count()).select_from(decisions)
                 .where(decisions.c.fail_open == 1)
             ).scalar() or 0
         return {
             "events": total, "agents": n_agents, "sessions": n_sessions,
+            "events_today": today,
             "verdicts": by_verdict,
+            "would": {"block": int(would.get("block", 0)), "ask": int(would.get("ask", 0))},
+            "activity": activity,
             "detectors": [{"detector": d, "count": n} for d, n in top],
+            # Only decisions that carry a measurement count; rows written
+            # before ADR-042 have none and would drag every figure to zero.
             "latency_ms": {
-                "mean": round(float(lat[0] or 0.0), 2),
-                "max": int(lat[1] or 0),
-                "measured": int(lat[2] or 0),
+                "mean": round(sum(times) / len(times), 4) if times else None,
+                "p50": round(_pct(times, 0.50), 4) if times else None,
+                "p95": round(_pct(times, 0.95), 4) if times else None,
+                "max": round(times[-1], 4) if times else None,
+                "measured": len(times),
                 "near_budget": slow,        # >= 40ms of a 50ms budget
                 "failed_open": failed_open,  # decisions made without evaluating
             },
@@ -317,6 +359,38 @@ class Repo:
                 for r in risky
             ],
         }
+
+    def _activity(self, conn, hours: int = 120) -> dict:
+        """Calls per hour for the last `hours` hours (UTC), with how many were
+        held, blocked, or would have been. Drives the Overview heatmap, which
+        used to be a fixed pseudo-random pattern (ADR-042)."""
+        from datetime import datetime, timedelta, timezone
+
+        end = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        start = end - timedelta(hours=hours - 1)
+        rows = conn.execute(
+            select(events.c.ts, decisions.c.verdict, decisions.c.sentence)
+            .join(decisions, decisions.c.event_id == events.c.event_id, isouter=True)
+            .where(events.c.ts >= start.strftime("%Y-%m-%dT%H"))
+        ).fetchall()
+        buckets: dict[str, dict] = {}
+        for ts, verdict, sentence in rows:
+            key = str(ts)[:13]
+            b = buckets.setdefault(key, {"calls": 0, "ask": 0, "block": 0, "would": 0})
+            b["calls"] += 1
+            if verdict == "block":
+                b["block"] += 1
+            elif verdict == "ask":
+                b["ask"] += 1
+            elif (sentence or "").startswith("[observe]"):
+                b["would"] += 1
+        cells = []
+        for i in range(hours):
+            t = start + timedelta(hours=i)
+            key = t.strftime("%Y-%m-%dT%H")
+            cells.append({"hour": key, **buckets.get(
+                key, {"calls": 0, "ask": 0, "block": 0, "would": 0})})
+        return {"hours": hours, "cells": cells}
 
     def agent_list(self) -> list[dict]:
         with self.engine.begin() as conn:
@@ -472,9 +546,15 @@ class Repo:
                 select(agents).where(agents.c.agent_id == agent_id)).first()
             if row is None:
                 return None
+            # 0.70 is the Safe-zone floor; the stored zone must say what the
+            # engine will do with that trust (it said "warm" while the engine
+            # treated the agent as cold — ADR-042).
+            from hypothesise_core.trust.model import WARM_BELOW, zone_for
+
+            trust = max(float(row.trust), WARM_BELOW)
             conn.execute(update(agents).where(agents.c.agent_id == agent_id).values(
                 quarantined=0, hot_signals=0,
-                trust=max(row.trust, 0.70), zone="warm",
+                trust=trust, zone=zone_for(trust),
                 trust_updated=utcnow()))
         return self.agent(agent_id)
 

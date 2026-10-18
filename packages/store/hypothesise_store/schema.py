@@ -131,6 +131,7 @@ decisions = Table(
     Column("budget_ms", Integer, server_default="0"),
     Column("fail_open", Integer, nullable=False, server_default="0"),
     Column("mode", String(16), nullable=False, server_default="observe"),
+    Column("elapsed_ms", Float, nullable=False, server_default="0"),
     Index("ix_decisions_verdict", "tenant_id", "verdict", "ts"),
 )
 

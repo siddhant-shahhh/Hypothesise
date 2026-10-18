@@ -127,7 +127,30 @@ class ControlPlaneSync:
         self.trust.load(rows)
         return len(rows)
 
+    async def adopt_human_changes(self) -> int:
+        """Release and Restrict happen on the dashboard; without this a
+        running proxy never heard of them and pushed its own trust straight
+        back over the release (ADR-042). Signals only ever LOWER trust, so a
+        stored value clearly above ours, or a quarantine flag that differs,
+        can only be a human decision — adopt it before pushing."""
+        rows = await self._call("/v1/trust")
+        if not isinstance(rows, list):
+            return 0
+        adopted = []
+        for r in rows:
+            aid = r.get("agent_id")
+            if not aid or aid not in self.trust.states:
+                continue
+            mine = self.trust.states[aid]
+            if (float(r.get("trust", 1.0)) > mine.trust + 0.05
+                    or bool(r.get("quarantined")) != mine.quarantined):
+                adopted.append(r)
+        if adopted:
+            self.trust.load(adopted)
+        return len(adopted)
+
     async def push_trust_once(self) -> int:
+        await self.adopt_human_changes()
         snap = self.trust.snapshot()
         if not snap:
             return 0

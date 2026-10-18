@@ -76,7 +76,7 @@ hypothesise mode enforce           # block dangerous actions, popup on each bloc
 hypothesise mode observe           # back to safe, any time
 ```
 
-Undo everything: `hypothesise uninstall`.
+Upgrade later with `uv tool upgrade hypothesise` (or `pipx upgrade` / `pip install -U`), then `hypothesise init`. Undo everything: `hypothesise uninstall`.
 
 ---
 
@@ -289,8 +289,9 @@ Example: Cursor's agent calls the `read_file` tool on a wrapped `fs` server.
    recorded as "would have blocked" and the call proceeds.
 5. **Verdict in enforce mode.**
    - **ALLOW** → forwarded to the real server; the reply goes back unchanged.
-   - **ASK** → held; a request appears on the dashboard's *Approvals* tab; no
-     answer within 120 s means **deny**.
+   - **ASK** → held; an Allow / Block dialog appears on screen *and* a request
+     appears on the dashboard's *Approvals* tab; the first answer wins, and no
+     answer within 60 s means **deny**.
    - **BLOCK** → not forwarded. Cursor gets a structured error with the sentence
      (`code -32001`, *"Blocked: read /app/.env (secret) at step 2, then external
      request to … at step 3"*) and **a popup appears on screen**.
@@ -412,6 +413,13 @@ warns if it isn't), and check the **Shadow** tab: every "would block" there on
 your own ordinary work is a block you'll get in enforce mode. The recommended
 path is two clean weeks of observe first.
 
+**Setup questions:** the first `hypothesise mode enforce` asks what agents must
+never touch (secrets, SSH/cloud logins, browser data, mail/messages, photos,
+personal folders, bulk-delete commands) and writes the answers as block rules
+every connected agent applies, with a code-folder exception. Re-ask with
+`--setup`. These rules, and the critical sequences, are the only things the
+agent **hooks** block — before the tool runs; everything else there is observed.
+
 **The popup:** when enforce mode blocks a call (or a human denies one), a
 notification appears — macOS Notification Center, a Windows toast (message-box
 fallback), or `notify-send` on Linux — with the agent, the tool and the exact
@@ -494,6 +502,8 @@ nothing. These hold in code and are exercised by failure drills on every release
 | `hypothesise mode [observe\|enforce] [--no-popup] [--api URL]` | show or switch the mode for every connected agent |
 | `hypothesise api [--port N] [--demo]` | dashboard (alias `dashboard`) |
 | `hypothesise uninstall [--client APP]` | restore every config `init` changed |
+| `hypothesise reset [-y]` | delete recorded events, alerts and trust; keep connections and settings |
+| `hypothesise release [AGENT…\|--all]` | restore trust for agents (e.g. after testing attacks) |
 | `hypothesise proxy --config FILE [--detect] [--api URL]` | run a proxy entry (normally launched by the app) |
 | `hypothesise wrap --client C --server S -- CMD…` | one wrapped server (written by `init`) |
 | `hypothesise hook claude-code\|vscode\|cursor` | hook receiver (written by `init`) |

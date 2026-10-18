@@ -89,11 +89,18 @@ def _m4_event_arg_shape(engine: Engine) -> None:
     _add_column(engine, "events", "arg_bytes", "INTEGER NOT NULL DEFAULT 0")
 
 
+def _m5_decision_elapsed(engine: Engine) -> None:
+    """Sub-millisecond decision time (ADR-042). `budget_ms` is an integer and
+    rounded every real decision down to 0."""
+    _add_column(engine, "decisions", "elapsed_ms", "REAL NOT NULL DEFAULT 0")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline", _m1_baseline),
     Migration(2, "agent_quarantine", _m2_agent_quarantine),
     Migration(3, "approval_context", _m3_approval_context),
     Migration(4, "event_arg_shape", _m4_event_arg_shape),
+    Migration(5, "decision_elapsed", _m5_decision_elapsed),
 ]
 
 TARGET_VERSION = max(m.version for m in MIGRATIONS)

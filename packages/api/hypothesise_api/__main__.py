@@ -20,11 +20,25 @@ def main() -> int:
 
     from .app import create_app
 
-    app = create_app(db_url=args.db, webhook_url=args.webhook)
+    db_url = args.db
+    if args.demo and not db_url:
+        # load_demo() clears the database it is given. Pointed at the default,
+        # that was the user's real history (ADR-042) — never again.
+        from pathlib import Path
+
+        from hypothesise_proxy.spool import home
+
+        demo_db = home() / "demo.db"
+        demo_db.parent.mkdir(parents=True, exist_ok=True)
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            Path(f"{demo_db}{suffix}").unlink(missing_ok=True)
+        db_url = f"sqlite:///{demo_db}"
+    app = create_app(db_url=db_url, webhook_url=args.webhook)
 
     if args.demo:
         from .demo import load_demo
 
+        app.state.demo = True
         n = load_demo(app.state.repo, app.state.engine)
         print(f"hypothesise: loaded {n} demo events from the scenario suite")
 

@@ -872,6 +872,10 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 const short = u => { const s = String(u ?? ''); return s.length > 55 ? s.slice(0,52)+'…' : s; };
 const when = t => esc(String(t ?? '').replace('T',' ').slice(0,19));
 const num = n => (n ?? 0).toLocaleString();
+// Decision times are often well under a millisecond; two decimals made every
+// real one read "0.00 ms", which looked invented (ADR-042).
+const ms = v => v == null ? '—' : v >= 10 ? v.toFixed(1) + ' ms' : v >= 1 ? v.toFixed(2) + ' ms'
+  : v >= 0.01 ? v.toFixed(3) + ' ms' : (v * 1000).toFixed(1) + ' µs';
 const vClass = v => `v ${v}`;
 const zc = z => z === 'hot' ? 'var(--danger)' : z === 'warm' ? 'var(--warn)' : 'var(--ok)';
 const ZONE = {cold:'Safe', warm:'Caution', hot:'Restricted'};
@@ -1073,19 +1077,29 @@ async function overview() {
   const [s, a] = await Promise.all([api('/v1/stats'), api('/v1/alerts?limit=6')]);
   const v = s.verdicts || {}, L = s.latency_ms || {};
 
-  // Build heatmap cells (5 rows x 26 cols = 130 cells)
-  let seed = 7, heatHtml = '';
-  for (let i = 0; i < 130; i++) {
-    seed = (seed * 9301 + 49297) % 233280;
-    const val = seed / 233280;
-    const cls = val > 0.82 ? ' l9' : val > 0.65 ? ' l3' : val > 0.40 ? ' l1' : '';
-    const isHighlight = i === 118 ? ' hl' : '';
-    heatHtml += `<i class="hc${cls}${isHighlight}" title="Window ${i+1}: ${Math.floor(val * 180)} calls"></i>`;
+  // Heatmap: the last 5 days x 24 hours from /v1/stats. Rows are days (oldest
+  // first), columns are hours; the grid flows by column, so cells are emitted
+  // hour by hour. Nothing here is invented: an empty hour is an empty cell.
+  const cells = (s.activity && s.activity.cells) || [];
+  const peak = Math.max(1, ...cells.map(c => c.calls));
+  let heatHtml = '';
+  const days = Math.floor(cells.length / 24);
+  for (let h = 0; h < 24; h++) {
+    for (let d = 0; d < days; d++) {
+      const c = cells[d * 24 + h]; if (!c) continue;
+      const cls = c.block ? ' l9' : (c.ask || c.would) ? ' l3' : c.calls ? (c.calls / peak > 0.5 ? ' l2' : ' l1') : '';
+      const label = `${c.hour.replace('T',' ')}:00 UTC — ${c.calls} call${c.calls===1?'':'s'}`
+        + (c.block ? `, ${c.block} blocked` : '') + (c.ask ? `, ${c.ask} held` : '')
+        + (c.would ? `, ${c.would} would have been stopped` : '');
+      heatHtml += `<i class="hc${cls}" title="${esc(label)}"></i>`;
+    }
   }
+  const W = s.would || {};
 
-  // Calculate fleet risk percentage from riskiest item or stats
-  const topRisk = s.riskiest && s.riskiest.length ? Math.round(s.riskiest[0].risk * 100) : 41;
-  const riskLabel = topRisk >= 50 ? 'High Risk' : topRisk >= 25 ? 'Elevated' : 'Normal';
+  // Highest current resource risk — real, or zero when nothing is scored yet.
+  const topRisk = s.riskiest && s.riskiest.length ? Math.round(s.riskiest[0].risk * 100) : 0;
+  const riskLabel = !(s.riskiest && s.riskiest.length) ? 'No resources scored yet'
+    : topRisk >= 50 ? 'High Risk' : topRisk >= 25 ? 'Elevated' : 'Normal';
 
   app.innerHTML = `
     <header class="hdr">
@@ -1095,7 +1109,7 @@ async function overview() {
       </div>
       <div class="hr-stat">
         <small>Attached Fleet</small>
-        <b>${s.agents || 7} agents active</b>
+        <b>${num(s.agents)} agent${s.agents===1?'':'s'} seen</b>
       </div>
     </header>
 
@@ -1103,7 +1117,7 @@ async function overview() {
       <!-- Card 1: Tool Calls & Activity Heatmap -->
       <section class="cd">
         <div class="ch">
-          <b>Tool calls today</b>
+          <b>Tool calls</b>
           <span class="lg">
             <i class="hc"></i> normal 
             <i class="hc l3"></i> asked 
@@ -1111,12 +1125,15 @@ async function overview() {
           </span>
         </div>
         <div class="nums">
-          <div><b>${num(s.events || 23631)}</b><small>total calls</small></div>
-          <div><b>${num(s.sessions || 42)}</b><small>sessions</small></div>
-          <div><b style="color:var(--warn)">${num(v.ask || 6)}</b><small>held for approval</small></div>
-          <div><b style="color:var(--danger)">${num(v.block || 12)}</b><small>blocked</small></div>
+          <div><b>${num(s.events_today)}</b><small>today (UTC)</small></div>
+          <div><b>${num(s.events)}</b><small>all time</small></div>
+          <div><b>${num(s.sessions)}</b><small>sessions</small></div>
+          <div><b style="color:var(--warn)">${num(v.ask)}</b><small>held for approval</small></div>
+          <div><b style="color:var(--danger)">${num(v.block)}</b><small>blocked</small></div>
+          <div><b style="color:${(W.block||W.ask)?'var(--warn)':'var(--ok)'}">${num((W.block||0)+(W.ask||0))}</b><small>would have stopped (observe)</small></div>
         </div>
-        <div class="heat" id="heat" aria-label="130-call activity heatmap">
+        <div class="faint" style="font-size:11px;margin-top:6px">Last 5 days by hour (UTC) — hover a square for its counts</div>
+        <div class="heat" id="heat" aria-label="Tool calls per hour, last 5 days">
           ${heatHtml}
         </div>
       </section>
@@ -1124,7 +1141,7 @@ async function overview() {
       <!-- Card 2: Fleet Risk Score & Engine Latency -->
       <section class="cd">
         <div class="ch">
-          <b>Fleet risk score & budget</b>
+          <b>Highest resource risk & decision speed</b>
           <span class="dim">latency budget: 50ms</span>
         </div>
         <svg viewBox="0 0 200 110" class="gz" role="img" aria-label="Fleet risk ${topRisk} percent">
@@ -1134,8 +1151,10 @@ async function overview() {
         </svg>
         <div class="gl">${riskLabel}</div>
         <div class="kv">
-          <div><span>Mean decision latency</span><b>${(L.mean ?? 0.14).toFixed(2)} ms</b></div>
-          <div><span>Slowest decision</span><b>${(L.max ?? 8.4)} ms</b></div>
+          <div><span>Decision time — mean</span><b>${ms(L.mean)}</b></div>
+          <div><span>Decision time — 95th percentile</span><b>${ms(L.p95)}</b></div>
+          <div><span>Slowest decision</span><b>${ms(L.max)}</b></div>
+          <div><span>Decisions measured</span><b>${num(L.measured)}</b></div>
           <div><span>Near 50ms budget</span><b style="color:${(L.near_budget||0)?'var(--warn)':'var(--ok)'}">${num(L.near_budget||0)}</b></div>
           <div><span>Failed open (safe default)</span><b style="color:${(L.failed_open||0)?'var(--danger)':'var(--ok)'}">${num(L.failed_open||0)}</b></div>
         </div>
@@ -1153,7 +1172,7 @@ async function overview() {
             <tr>
               <td class="mono"><b>${esc(d.detector)}</b></td>
               <td>${d.count}</td>
-              <td><div class="bar" style="max-width:none"><i style="width:${Math.min(100, d.count * 5)}%"></i></div></td>
+              <td><div class="bar" style="max-width:none"><i style="width:${Math.round(100 * d.count / Math.max(...s.detectors.map(x => x.count)))}%"></i></div></td>
             </tr>`).join('')}</tbody></table>`
           : '<div class="empty">No detector anomalies recorded yet</div>'}
       </section>
@@ -1172,7 +1191,7 @@ async function overview() {
               <b>${r.risk.toFixed(3)}</b>
             </div>`).join('')}
           </div>
-          <div class="sn">At risk 0.30 or above, agents inherit caution checks immediately upon accessing.</div>`
+          <div class="note">Once a resource is flagged above 0.40 (risk × confidence), any agent that touches it next is treated with more suspicion — even one that never misbehaved.</div>`
         : '<div class="empty">No resources scored yet</div>'}
       </section>
 
@@ -1194,9 +1213,11 @@ function alertRows(a) {
   <tbody>${a.map(x => `<tr>
     <td><b>${esc(x.agent_id)}</b><div class="faint">step ${x.step ?? 1}</div></td>
     <td class="mono">${esc(x.tool)}<div class="faint mono">${esc(short(x.resource))}</div></td>
-    <td><span class="${vClass(x.verdict)}">${esc((x.verdict||'allow').toUpperCase())}</span>
+    <td>${x.enforced === false
+          ? `<span class="${vClass(x.verdict)}" style="opacity:.75">WOULD ${esc((x.verdict||'').toUpperCase())}</span><div class="faint">observe — it ran</div>`
+          : `<span class="${vClass(x.verdict)}">${esc((x.verdict||'allow').toUpperCase())}</span>`}
         <div class="faint">${(x.score||0).toFixed(2)}</div></td>
-    <td>${evs(x.detectors)}<div class="sentence ${esc(x.verdict)}">${esc(x.sentence || 'Action verified against normal profile.')}</div></td>
+    <td>${evs(x.detectors)}<div class="sentence ${esc(x.verdict)}">${esc(x.sentence || '—')}</div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 
@@ -1214,7 +1235,7 @@ async function sessions() {
     <table><thead><tr><th>Agent</th><th>Session ID</th><th>Total Events</th><th>Alerts</th><th>Started</th></tr></thead>
     <tbody>${s.map(x => `<tr class="click" data-s="${esc(x.session_id)}">
       <td><b>${esc(x.agent_id)}</b></td>
-      <td class="mono">${esc(x.session_id.slice(0, 22))}…</td>
+      <td class="mono">${esc(x.session_id.length > 22 ? x.session_id.slice(0, 22) + '…' : x.session_id)}</td>
       <td>${num(x.events)}</td>
       <td>${x.alerts ? `<span class="v block">${x.alerts}</span>` : '<span class="dim">0</span>'}</td>
       <td class="dim">${when(x.started)}</td>
@@ -1270,7 +1291,7 @@ async function agents() {
         <td><b>${esc(x.agent_id)}</b><div class="faint">baseline: ${esc(x.baseline_state||'?')}</div>
             ${x.quarantined ? '<div class="quar">QUARANTINED</div>' : ''}</td>
         <td><span class="zone ${esc(x.zone||'cold')}">${esc(ZONE[x.zone]||'Safe')}</span>
-            ${x.hot_signals ? `<div class="faint">${x.hot_signals} signals while hot</div>` : ''}</td>
+            ${x.hot_signals ? `<div class="faint">${x.hot_signals} signal${x.hot_signals===1?'':'s'} while hot</div>` : ''}</td>
         <td>${(x.trust??1).toFixed(2)}
             <div class="tmeter"><i style="width:${(x.trust??1)*100}%;background:${zc(x.zone)}"></i></div></td>
         <td class="dim">${num(x.events??0)}</td>
@@ -1358,6 +1379,9 @@ function wireAgentButtons() {
 // ==========================================
 async function graph() {
   const g = await api('/v1/graph');
+  // Server nodes carry no edges (agent -> tool -> resource is the path), so
+  // drawn they were unconnected dots that looked like extra agents.
+  if (g.nodes) g.nodes = g.nodes.filter(n => n.kind !== 'server');
   if (!g.nodes || !g.nodes.length) { app.innerHTML = head('Behavioural web','Agents, tools and resources') + emptyHint(); return; }
   const SENS = ['secret','shell','network_egress'];
   const byId = Object.fromEntries(g.nodes.map(n => [n.id, n]));
@@ -1495,14 +1519,14 @@ async function trust() {
     </section>
     <section class="cd">
       <div class="ch"><b>Threshold configuration</b><span class="dim">runtime constants</span></div>
-      <div class="row"><span>Caution below</span><span>${tz.warm_below ?? '0.70'}</span></div>
-      <input type="range" min="0" max="1" step="0.05" value="${tz.warm_below ?? 0.7}" disabled style="width:100%">
-      <div class="row"><span>Restricted below</span><span>${tz.hot_below ?? '0.30'}</span></div>
-      <input type="range" min="0" max="1" step="0.05" value="${tz.hot_below ?? 0.3}" disabled style="width:100%">
-      <div class="row"><span>Quarantine after</span><span>${tz.quarantine_after ?? '3'} signals while hot</span></div>
-      <div class="row"><span>Ask above score</span><span>${p.thresholds?.ask ?? '0.65'}</span></div>
-      <div class="row"><span>Block above score</span><span>${p.thresholds?.block ?? '0.85'}</span></div>
-      <div class="note">These parameters govern real-time state machine decay and recovery.</div>
+      <div class="row"><span>Caution below</span><span>${tz.warm_below ?? '—'}</span></div>
+      <input type="range" min="0" max="1" step="0.05" value="${tz.warm_below ?? 0}" disabled style="width:100%">
+      <div class="row"><span>Restricted below</span><span>${tz.hot_below ?? '—'}</span></div>
+      <input type="range" min="0" max="1" step="0.05" value="${tz.hot_below ?? 0}" disabled style="width:100%">
+      <div class="row"><span>Quarantine after</span><span>${tz.quarantine_after ?? '—'} signals while hot</span></div>
+      <div class="row"><span>Ask at score ≥</span><span>${p.thresholds?.ask ?? '—'}</span></div>
+      <div class="row"><span>Block at score ≥</span><span>${p.thresholds?.block ?? '—'}</span></div>
+      <div class="note">Read from the running engine. Trust drops fast on signals and recovers over about a day of clean work.</div>
     </section>
   </div>`;
 }
@@ -1634,7 +1658,8 @@ async function shadow() {
 // 10. POLICIES
 // ==========================================
 async function policies() {
-  const p = await api('/v1/policy');
+  const [p, cfg] = await Promise.all([api('/v1/policy'), api('/v1/settings').catch(() => ({}))]);
+  const mine = cfg.rules || [];
   const errs = Object.entries(p.errors || {});
   const t1 = p.detectors?.tier1 || [], t2 = p.detectors?.tier2 || [];
   const sc = p.short_circuit || [];
@@ -1653,13 +1678,13 @@ async function policies() {
         </tr>`).join('')}
         <tr>
           <td><span class="tg on"></span></td>
-          <td><b>Score ≥ ${p.thresholds?.block ?? 0.85}</b><div class="faint">combined detector + graph + trust</div></td>
+          <td><b>Score ≥ ${p.thresholds?.block ?? '—'}</b><div class="faint">combined detector + graph + trust</div></td>
           <td class="dim">all agents</td>
           <td><span class="v block">BLOCK</span></td>
         </tr>
         <tr>
           <td><span class="tg on"></span></td>
-          <td><b>Score ≥ ${p.thresholds?.ask ?? 0.65}</b></td>
+          <td><b>Score ≥ ${p.thresholds?.ask ?? '—'}</b></td>
           <td class="dim">all agents</td>
           <td><span class="v ask">ASK</span></td>
         </tr>
@@ -1670,7 +1695,21 @@ async function policies() {
           <td><span class="v allow">ALLOW</span></td>
         </tr>
       </tbody></table>
-      <div class="note">Runtime configuration is synced from <b>hypothesise.config.json</b>.</div>
+      <div class="note">Mode right now: <b>${esc(cfg.mode || 'observe')}</b>. In observe mode every BLOCK and ASK above is recorded as "would have" and the action still runs.</div>
+    </section>
+
+    <section class="cd" style="grid-column:1/-1">
+      <div class="ch"><b>Your protections</b><span class="dim">${mine.length} rule${mine.length===1?'':'s'} · set with <code>hypothesise mode enforce --setup</code></span></div>
+      ${mine.length ? `<table><thead><tr><th>Rule</th><th>What it covers</th><th>Outcome</th><th>Told to you and the agent</th></tr></thead><tbody>${mine.map(r => {
+        const m = r.match || {}, u = m.resource_uri;
+        const what = [m.resource_class ? 'class: ' + m.resource_class : '',
+          Array.isArray(u) ? `${u.length} path pattern${u.length===1?'':'s'} (${esc(u[0])}${u.length>1?', …':''})` : (u ? esc(u) : '')].filter(Boolean).join(' · ');
+        return `<tr><td><b>${esc(r.name)}</b>${(r.except||[]).length ? `<div class="faint">except ${esc(r.except.join(', '))}</div>` : ''}</td>
+          <td class="mono" style="font-size:11px">${what}</td>
+          <td><span class="v ${esc(r.action)}">${esc((r.action||'').toUpperCase())}</span></td>
+          <td>${esc(r.reason || '')}</td></tr>`; }).join('')}</tbody></table>`
+        : '<div class="empty">No personal-data rules yet. Run <code>hypothesise mode enforce</code> — it asks what agents must never touch.</div>'}
+      <div class="note">Rules in a proxy entry's own <b>hypothesise.config.json</b> also apply to that entry; they are read by the proxy, so they are not listed here.</div>
     </section>
 
     <section class="cd">
@@ -1716,57 +1755,60 @@ async function audit() {
 // 12. SETTINGS
 // ==========================================
 async function settings() {
-  const [h, r, p] = await Promise.all([
+  const [h, r, p, cfg] = await Promise.all([
     api('/healthz').catch(()=>({})),
     fetch('/readyz').then(x=>x.json()).catch(()=>({})),
-    api('/v1/policy').catch(()=>({}))
+    api('/v1/policy').catch(()=>({})),
+    api('/v1/settings').catch(()=>({}))
   ]);
+  const enforcing = cfg.mode === 'enforce';
 
   app.innerHTML = head('Settings','Platform configuration, frameworks and local security model') + `
   <div class="g2">
     <section class="cd">
       <div class="ch"><b>Agent framework integrations</b></div>
       <div class="list">
-        <div><span>MCP (Model Context Protocol) <span class="faint">— stdio proxy</span></span><span class="zone cold">Enforcing</span></div>
-        <div><span>LangGraph</span><span class="zone warm">Advisory</span></div>
-        <div><span>CrewAI</span><span class="dim">Coming soon</span></div>
-        <div><span>AutoGen</span><span class="dim">Coming soon</span></div>
-        <div><span>OpenAI Agents SDK</span><span class="dim">Coming soon</span></div>
+        <div><span>MCP servers <span class="faint">— wrapped by init, or a proxy entry</span></span><span class="zone ${enforcing?'cold':'warm'}">${enforcing?'Blocking':'Watching'}</span></div>
+        <div><span>Claude Code, Copilot, Cursor built-in tools <span class="faint">— agent hooks</span></span><span class="zone ${enforcing?'cold':'warm'}">${enforcing?'Blocking (rules + critical sequences)':'Watching'}</span></div>
+        <div><span>LangChain / LangGraph <span class="faint">— callback handler</span></span><span class="zone warm">${enforcing?'Advisory (raise_on_block)':'Watching'}</span></div>
       </div>
-      <div class="note">MCP is currently the primary real-time blocking path. Advisory adapters monitor and score without hard intercepts.</div>
+      <div class="note">Switch with <code>hypothesise mode enforce</code> / <code>hypothesise mode observe</code> — every connected agent follows within about 2 seconds. Which apps are connected: <code>hypothesise status</code>.</div>
     </section>
 
     <section class="cd">
       <div class="ch"><b>Daemon status</b></div>
-      <div class="row"><span>Version</span><span>${esc(h.version||'0.9.4')}</span></div>
+      <div class="row"><span>Version</span><span>${esc(h.version||'—')}</span></div>
+      <div class="row"><span>Mode</span><span style="color:${enforcing?'var(--danger)':'var(--ok)'}">${enforcing?'Enforce — blocking':'Observe — recording only'}</span></div>
+      <div class="row"><span>Popups on block</span><span>${cfg.notify === false ? 'off' : 'on'}</span></div>
       <div class="row"><span>Process status</span><span style="color:${h.ok?'var(--ok)':'var(--danger)'}">${h.ok?'Online':'Disconnected'}</span></div>
-      <div class="row"><span>Policy Schema</span><span style="color:${r.ok?'var(--ok)':'var(--danger)'}">${r.schema ? 'v'+esc(r.schema.current) : 'v1.0'}</span></div>
-      <div class="row"><span>Registered detectors</span><span>${(p.detectors?.tier1||[]).length + (p.detectors?.tier2||[]).length || 9}</span></div>
+      <div class="row"><span>Database schema</span><span style="color:${r.ok?'var(--ok)':'var(--danger)'}">${r.schema ? 'v'+esc(r.schema.current) + (r.ok ? '' : ' — run hypothesise migrate') : '—'}</span></div>
+      <div class="row"><span>Registered detectors</span><span>${(p.detectors?.tier1||[]).length + (p.detectors?.tier2||[]).length}</span></div>
+      <div class="row"><span>Data folder</span><span class="mono" style="font-size:11px">${esc(cfg.home || '—')}</span></div>
     </section>
 
     <section class="cd">
-      <div class="ch"><b>Alert webhooks</b></div>
-      <div class="list">
-        <div><span>Notify on approval requested</span><span class="tg on"></span></div>
-        <div><span>Notify on approval decided</span><span class="tg on"></span></div>
-        <div><span>Notify on agent quarantine</span><span class="tg on"></span></div>
-      </div>
+      <div class="ch"><b>Alert webhook</b></div>
+      ${cfg.webhook
+        ? `<div class="row"><span>Posting to</span><span class="mono" style="font-size:11px">${esc(cfg.webhook)}</span></div>
+           <div class="faint">Sent on: approval requested, approval decided, agent restricted, agent released.</div>`
+        : '<div class="empty">Not configured. Start the dashboard with <code>hypothesise api --webhook URL</code> to post approval and quarantine events.</div>'}
     </section>
 
     <section class="cd">
       <div class="ch"><b>Local-first architecture</b></div>
       <div class="row"><span>Auth required</span><span style="color:var(--danger)">Local-only</span></div>
       <div class="row"><span>Data storage</span><span>SQLite / Embedded</span></div>
-      <div class="row"><span>Port</span><span>127.0.0.1:8080</span></div>
-      <div class="note hard">There is no authentication: the Hypothesise control plane runs locally on your machine (ADR-009). Never expose port 8080 to a network you do not control.</div>
+      <div class="row"><span>Address</span><span>${esc(location.host)}</span></div>
+      <div class="note hard">There is no authentication: the Hypothesise control plane runs locally on your machine (ADR-009). Never expose port 8080 (or whichever port it runs on) to a network you do not control.</div>
     </section>
   </div>`;
 }
 
 function emptyHint() {
   return `<div class="card"><div class="empty">
-    <p><b>No data registered yet.</b></p>
-    <p class="dim">Run with demo telemetry:<br><code>hypothesise api --demo</code></p>
+    <p><b>Nothing recorded yet.</b></p>
+    <p class="dim">Connect your agents with <code>hypothesise init</code>, restart them, and use them as usual — their activity appears here.<br>
+    Just want to look around? <code>hypothesise api --demo</code> shows sample data in a separate demo database.</p>
   </div></div>`;
 }
 
@@ -1848,6 +1890,15 @@ setInterval(liveRefresh, 5000);
 })();
 render();
 refreshCount();
+
+// A demo database must never pass for real activity: say so on every view.
+api('/v1/settings').then(cfg => {
+  if (!cfg || !cfg.demo) return;
+  const b = document.createElement('div');
+  b.textContent = 'DEMO DATA — sample scenarios from the test suite, not your agents. Restart without --demo to see your own activity.';
+  b.style.cssText = 'background:var(--warn);color:#fff;font-weight:600;font-size:12px;text-align:center;padding:6px 12px;letter-spacing:.02em';
+  document.body.prepend(b);
+}).catch(() => {});
 
 // ===== Mobile helpers: label table cells so wide tables render as cards =====
 (function(){

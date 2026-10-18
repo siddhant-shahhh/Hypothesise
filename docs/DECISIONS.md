@@ -1107,3 +1107,70 @@ README's relative links (`docs/PRIMER.md`) 404 on the PyPI project page.
 a block when it happens. Popups are unverified on a real Windows toast stack
 and on Linux desktops without a notification daemon.
 
+
+### ADR-042 — 0.1.0a4: real-run fixes, protection questions, blocking hooks, an evidence package
+
+**Status:** accepted · 2026-10-18
+
+**Context.** 0.1.0a3 could switch to enforce, but a first real run surfaced
+a row of problems a fixture suite never would: the dashboard opened full of
+demo-looking data; decision latency read "0.00 ms" because it was stored as an
+integer; enforce mode blocked almost nothing a developer would recognise as a
+threat (it needed a baseline no real agent had yet, and the only out-of-the-box
+rule was `.env`); an ASK verdict waited on a dashboard page nobody had open and
+timed out; released agents went straight back to Restricted; and several tabs
+showed placeholder numbers. We also had no honest detection/false-positive/
+latency figures to stand next to Straiker's and Lakera's published claims.
+
+**Decisions.**
+
+1. **Nothing but real activity on a fresh install.** The pre-rename database is
+   no longer adopted automatically, `--demo` always uses a separate `demo.db`
+   (the API entrypoint too, not only the CLI), the dashboard shows a DEMO banner
+   when it is on, and empty tabs say "connect your agents" rather than seeding
+   mock data. New `hypothesise reset` deletes recorded data while keeping
+   connections and settings.
+2. **Real latency.** Decisions carry `elapsed_ms` (float, sub-microsecond),
+   migrated onto `decisions`. The dashboard shows mean/p95/max in ms or µs, over
+   only measured rows, and the Overview heatmap is real calls-per-hour, not a
+   fixed pseudo-random pattern.
+3. **`hypothesise mode enforce` asks what to protect.** A short set of questions
+   (secrets, SSH/cloud logins, browser data, mail/messages, photos, personal
+   folders, bulk-delete commands) becomes block rules in `settings.json`, read
+   by every wrapped server, proxy and blocking hook, with a code-folder
+   exception so a project inside Documents still works. `--setup` re-asks;
+   `--yes` and unattended runs use safe defaults. Rules take `except` and
+   list-of-glob matches, normalised across OSes. The block sentence leads with
+   the user's own rule.
+4. **Agent hooks can block before the tool runs.** `init` now also writes a
+   PreToolUse hook (Claude Code, Copilot, Cursor). In observe mode it returns
+   at once; in enforce mode it blocks only what needs no baseline — a protection
+   rule or a critical sequence (secret→egress, shell exfil, retry-after-denial),
+   reading a short window back from the spool — and replies in each agent's deny
+   shape plus exit 2. PostToolUse stays for everything else.
+5. **The question reaches the screen.** An ASK verdict now shows an OS dialog
+   with Allow/Block as well as opening on the dashboard; the first answer wins,
+   no answer blocks. Enforce no longer refuses to start without a dashboard (a
+   dead server takes the agent's tools down with it) — blocks still apply, only
+   approval needs a dashboard or the on-screen dialog. Block popups became an
+   alert/dialog (the banner was silently dropped without notification
+   permission) and are rate-limited across processes.
+6. **Human trust decisions stick.** The proxy adopts Release/Restrict from the
+   control plane before pushing its own trust back; Release sets the zone the
+   engine will actually apply. New `hypothesise release [--all]`.
+7. **Live learning.** The engine real traffic runs through learns from clean,
+   allowed calls and activates a baseline only after ~200 of them (the training
+   harness still uses 12). Baselines persist to `~/.hypothesise/baselines.json`.
+   A fetch to an internal host (localhost/private) is no longer counted as
+   external egress, which had fired `sensitive_then_egress` on an ordinary
+   `.env` read followed by a local health check.
+8. **An evidence package.** `scripts/evidence.py` and `docs/EVIDENCE.md` report
+   detection, false positives and latency against a denylist and Invariant
+   Guardrails (Snyk), on the suites already in the repo plus held-out synthetic
+   coding traffic. Measured, reproducible, with limitations stated.
+9. **Dashboard accuracy.** Alerts and the audit log distinguish an enforced
+   block from an observe-mode "would block"; sessions count would-blocks as
+   alerts; Threat signals and the graph read proxy-decided events too; server
+   nodes are dropped from the graph; Policies lists the active protection rules;
+   Settings reflects the real mode, data folder and webhook.
+

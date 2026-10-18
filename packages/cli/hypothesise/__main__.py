@@ -4,6 +4,8 @@
     hypothesise status                          what is connected, what was recorded
     hypothesise mode [observe|enforce]          switch every connected agent at once
     hypothesise api [--port 8080] [--demo]     dashboard (alias: dashboard)
+    hypothesise reset                           delete recorded data, start clean
+    hypothesise release [AGENT|--all]           restore trust after testing
     hypothesise uninstall                       restore every config init changed
     hypothesise proxy --config FILE [--detect] MCP interception from a config file
     hypothesise wrap --client C --server S -- CMD...   one wrapped server (written by init)
@@ -64,6 +66,7 @@ def _cmd_api(args: argparse.Namespace) -> int:
     if args.demo:
         from hypothesise_api.demo import load_demo
 
+        app.state.demo = True
         n = load_demo(app.state.repo, app.state.engine)
         print(f"hypothesise: loaded {n} demo events from the scenario suite")
     # Say WHICH index.html is being served. A non-editable install leaves a
@@ -180,7 +183,12 @@ def _cmd_wrap(args: argparse.Namespace) -> int:
             print("hypothesise: enforce mode needs the dashboard for approvals "
                   "(set HYPOTHESISE_API_URL); running in observe mode", file=sys.stderr)
             config.gate.mode = "observe"
-        proxy = HypothesiseProxy(config, engine=Engine())
+        from hypothesise_core.policy.rules import RuleSet
+        from hypothesise_proxy import baselines as _bl
+
+        engine = Engine.live(rules=RuleSet.from_config(_settings.rules()))
+        _bl.load_into(engine)
+        proxy = HypothesiseProxy(config, engine=engine)
     except Exception as exc:  # noqa: BLE001
         print(f"hypothesise: could not start ({exc}); running {cmd[0]} unwrapped",
               file=sys.stderr)
@@ -192,9 +200,9 @@ def _cmd_wrap(args: argparse.Namespace) -> int:
 
 
 def _cmd_hook(args: argparse.Namespace) -> int:
-    from hypothesise.hook import run
+    from hypothesise.hook import run, run_pre
 
-    return run(args.client)
+    return run_pre(args.client) if args.pre else run(args.client)
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
@@ -207,6 +215,88 @@ def _cmd_uninstall(args: argparse.Namespace) -> int:
     from hypothesise.clients import cmd_uninstall
 
     return cmd_uninstall(args)
+
+
+def _cmd_release(args: argparse.Namespace) -> int:
+    """Give agents their trust back (Safe zone) — e.g. after testing attacks."""
+    import json
+    import urllib.request
+
+    api = (args.api or "http://127.0.0.1:8080").rstrip("/")
+
+    def call(path: str, method: str = "GET"):
+        req = urllib.request.Request(f"{api}{path}", method=method,
+                                     data=b"" if method == "POST" else None)
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read().decode("utf-8") or "null")
+
+    try:
+        agents = call("/v1/agents")
+    except Exception:  # noqa: BLE001
+        print(f"hypothesise: the dashboard is not running at {api} — start it with "
+              "`hypothesise api`, then run this again.", file=sys.stderr)
+        return 1
+    names = [a["agent_id"] for a in agents
+             if args.all and a.get("zone") in ("warm", "hot") or a["agent_id"] in (args.agent or [])]
+    if not names:
+        print("hypothesise: no agent needs releasing — all are in the Safe zone."
+              if args.all else "hypothesise: name an agent, or use --all")
+        return 0
+    for n in names:
+        row = call(f"/v1/agents/{urllib.request.quote(n, safe='')}/release", "POST")
+        print(f"  released {n}: trust {row.get('trust', 0):.2f}, zone {row.get('zone')}")
+    print("Connected proxies pick this up within about 30 seconds.")
+    return 0
+
+
+def _cmd_reset(args: argparse.Namespace) -> int:
+    """Forget everything recorded; keep connections, mode and protections.
+
+    For a machine that ran tests or demos into its real database before
+    0.1.0a4, and for anyone who wants a clean start (ADR-042).
+    """
+    import json
+    import urllib.request
+
+    from hypothesise_proxy.spool import home, spool_dir
+
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=1):
+            print("hypothesise: the dashboard is running — stop it (Ctrl+C) first, "
+                  "then run reset again.", file=sys.stderr)
+            return 1
+    except Exception:  # noqa: BLE001 — not running is what we want
+        pass
+    root = home()
+    targets = [p for p in (root / "hypothesise.db", root / "hypothesise.db-wal",
+                           root / "hypothesise.db-shm") if p.exists()]
+    spooled = [p for p in spool_dir().glob("*") if p.is_file()] if spool_dir().is_dir() else []
+    if not targets and not spooled:
+        print("hypothesise: nothing recorded yet — already clean.")
+        return 0
+    print("hypothesise reset — deletes every recorded event, alert and trust score:")
+    for p in targets:
+        print(f"  {p}")
+    if spooled:
+        print(f"  {spool_dir()}  ({len(spooled)} file(s) waiting for the dashboard)")
+    print("Kept: app connections, observe/enforce mode, protections, backups.")
+    if not args.yes:
+        try:
+            if input("Delete? [y/N] ").strip().lower() not in ("y", "yes"):
+                print("hypothesise: nothing deleted.")
+                return 1
+        except EOFError:
+            print("hypothesise: nothing deleted (pass --yes to confirm).")
+            return 1
+    for p in [*targets, *spooled]:
+        try:
+            p.unlink()
+        except OSError as exc:
+            print(f"hypothesise: could not delete {p}: {exc}", file=sys.stderr)
+            return 1
+    print(json.dumps({"deleted": len(targets) + len(spooled)}) if args.json else
+          "hypothesise: done. The dashboard starts empty and shows only what your agents do from now on.")
+    return 0
 
 
 def _cmd_mode(args: argparse.Namespace) -> int:
@@ -240,17 +330,25 @@ def _cmd_proxy(args: argparse.Namespace) -> int:
     # nobody to ask, and both remaining options are bad enough to refuse at
     # startup rather than discover in production.
     if config.gate.enforcing and not config.api_url:
-        print("hypothesise: enforce mode needs a control plane for approvals.\n"
-              "        run `hypothesise api`, then pass --api http://127.0.0.1:8080",
+        # Refusing to start shows up in the agent app as a broken server, and
+        # takes every tool behind it down with it. Blocks work without the
+        # dashboard; only approvals need it (ADR-042).
+        print("hypothesise: enforce mode without a dashboard — blocks still apply; "
+              "actions that need approval cannot be approved until `hypothesise api` runs",
               file=sys.stderr)
-        return 2
 
     engine = None
     if args.detect:
         from hypothesise_core.engine import Engine
         from hypothesise_core.policy.rules import RuleSet
 
-        engine = Engine(rules=RuleSet.from_config(config.rules))
+        # The proxy's own rules plus the personal-data rules from
+        # `hypothesise mode enforce` (ADR-042).
+        from hypothesise_proxy import baselines as _bl
+        from hypothesise_proxy import settings as _settings
+
+        engine = Engine.live(rules=RuleSet.from_config([*config.rules, *_settings.rules()]))
+        _bl.load_into(engine)
         extra = f" ({len(engine.rules.rules)} policy rules)" if engine.rules.rules else ""
         print(f"hypothesise: detection engine enabled{extra}", file=sys.stderr)
 
@@ -335,11 +433,26 @@ def build_parser() -> argparse.ArgumentParser:
                     help="show an on-screen popup when an action is blocked (default)")
     pg.add_argument("--no-popup", dest="popup", action="store_false",
                     help="no popups; blocks still show on the dashboard")
+    md.add_argument("--setup", action="store_true",
+                    help="ask again which personal data agents may never touch")
+    md.add_argument("-y", "--yes", action="store_true",
+                    help="no questions: keep saved answers, or use the safe defaults")
     md.set_defaults(fn=_cmd_mode)
 
     u = sub.add_parser("uninstall", help="restore every config that init changed")
     client_opts(u)
     u.set_defaults(fn=_cmd_uninstall)
+
+    rl = sub.add_parser("release", help="restore trust for agents (after testing attacks)")
+    rl.add_argument("agent", nargs="*", help="agent id(s), as shown on the Agents tab")
+    rl.add_argument("--all", action="store_true", help="every agent in Caution or Restricted")
+    rl.add_argument("--api", default=None, metavar="URL")
+    rl.set_defaults(fn=_cmd_release)
+
+    r = sub.add_parser("reset", help="delete everything recorded (keeps connections and settings)")
+    r.add_argument("-y", "--yes", action="store_true", help="do not ask")
+    r.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+    r.set_defaults(fn=_cmd_reset)
 
     a = sub.add_parser("api", aliases=["dashboard"], help="run the dashboard (alias: dashboard)")
     a.add_argument("--host", default="127.0.0.1")
@@ -367,6 +480,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     h = sub.add_parser("hook", help="agent hook receiver (written by init)")
     h.add_argument("client", choices=["claude-code", "vscode", "cursor"])
+    h.add_argument("--pre", action="store_true",
+                   help="before the tool runs: block it in enforce mode (written by init)")
     h.set_defaults(fn=_cmd_hook)
 
     d = sub.add_parser("doctor", help="diagnose the environment")

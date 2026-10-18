@@ -433,20 +433,71 @@ def plan_unwrap(f: McpFile) -> Change | None:
     return ch
 
 
-def _hook_groups(settings: dict) -> list:
+PRE = "--pre"
+
+
+def _hook_groups(settings: dict, event: str = "PostToolUse") -> list:
     hooks = settings.get("hooks")
     if not isinstance(hooks, dict):
         return []
-    post = hooks.get("PostToolUse")
-    return post if isinstance(post, list) else []
+    groups = hooks.get(event)
+    return groups if isinstance(groups, list) else []
+
+
+def _ours(cmd: Any) -> bool:
+    return HOOK_MARK in str(cmd or "")
 
 
 def has_hook(settings: dict) -> bool:
     for group in _hook_groups(settings):
         for h in (group or {}).get("hooks") or []:
-            if HOOK_MARK in str((h or {}).get("command", "")):
+            if _ours((h or {}).get("command")):
                 return True
     return False
+
+
+def has_hook_file(path: Path) -> bool | None:
+    """None: our hook is not there at all. False: only the observing
+    PostToolUse hook (pre-0.1.0a4). True: the blocking pre-tool hook too."""
+    if not path.is_file():
+        return None
+    data, _ = read_json(path)
+    if data is None or HOOK_MARK not in json.dumps(data):
+        return None
+    hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+    pre = list(hooks.get("PreToolUse") or []) + list(hooks.get("preToolUse") or [])
+    return PRE in json.dumps(pre)
+
+
+def _ensure(groups: list, want: str, nested: bool) -> tuple[bool, bool]:
+    """Make exactly our command present in a hook list. Returns (added, repaired).
+
+    `nested`: Claude Code groups entries under {"matcher", "hooks": [...]};
+    Copilot and Cursor list commands directly."""
+    entries = ([h for g in groups for h in (g or {}).get("hooks") or []]
+               if nested else [h for h in groups if isinstance(h, dict)])
+    ours = [h for h in entries if isinstance(h, dict) and _ours(h.get("command"))]
+    if ours:
+        stale = [h for h in ours if h.get("command") != want]
+        for h in stale:
+            h["command"] = want
+        return False, bool(stale)
+    if nested:
+        groups.append({"matcher": "*", "hooks": [
+            {"type": "command", "command": want, "timeout": 10}]})
+    else:
+        groups.append({"type": "command", "command": want, "timeout": 10})
+    return True, False
+
+
+def _describe(added_post: bool, added_pre: bool, repaired: bool, what: str) -> str:
+    if added_post and added_pre:
+        return f"all tools ({what}; blocks in enforce mode)"
+    if added_pre:
+        return "all tools (add blocking for enforce mode)"
+    if added_post:
+        return f"all tools ({what})"
+    return "all tools (repair outdated hook command)" if repaired else ""
 
 
 def plan_hook(exe: str) -> Change | None:
@@ -458,43 +509,36 @@ def plan_hook(exe: str) -> Change | None:
     if data is None:
         ch.error = err
         return ch
-    if has_hook(data):
-        want = hook_command(exe)
-        new = json.loads(json.dumps(data))
-        stale = False
-        for group in _hook_groups(new):
-            for h in (group or {}).get("hooks") or []:
-                if HOOK_MARK in str((h or {}).get("command", "")) and h.get("command") != want:
-                    h["command"] = want
-                    stale = True
-        if not stale:
-            ch.skipped.append(("all tools", "already connected"))
-            return ch
-        ch.data = new
-        ch.servers.append("all tools (repair outdated hook command)")
-        return ch
     new = json.loads(json.dumps(data))
     hooks = new.setdefault("hooks", {})
     if not isinstance(hooks, dict):
         ch.error = "'hooks' in settings.json is not an object — left untouched"
         return ch
-    post = hooks.setdefault("PostToolUse", [])
-    post.append({"matcher": "*", "hooks": [
-        {"type": "command", "command": hook_command(exe), "timeout": 10}]})
+    a1, r1 = _ensure(hooks.setdefault("PostToolUse", []), hook_command(exe), nested=True)
+    # PreToolUse runs before the tool, so in enforce mode it can stop it. In
+    # observe mode it returns at once without loading the engine (ADR-042).
+    a2, r2 = _ensure(hooks.setdefault("PreToolUse", []), f"{hook_command(exe)} {PRE}", nested=True)
+    what = _describe(a1, a2, r1 or r2, "built-in + MCP")
+    if not what:
+        ch.skipped.append(("all tools", "already connected"))
+        return ch
     ch.data = new
-    ch.servers.append("all tools (built-in + MCP)")
+    ch.servers.append(what)
     return ch
 
 
 def plan_copilot_hook(exe: str) -> Change | None:
     """Copilot's built-in tools (view, read_file, bash…) cannot be switched off
-    and never touch MCP. A PostToolUse agent hook is the only way to see them."""
+    and never touch MCP. Agent hooks are the only way to see — and, before the
+    tool runs, to stop — them."""
     if not vscode_present():
         return None
     path = copilot_hook_file()
     ch = Change("VS Code Copilot (built-in tools)", "vscode", path, "hook")
-    want = {"hooks": {"PostToolUse": [
-        {"type": "command", "command": copilot_hook_command(exe), "timeout": 10}]}}
+    cmd = copilot_hook_command(exe)
+    want = {"hooks": {
+        "PreToolUse": [{"type": "command", "command": f"{cmd} {PRE}", "timeout": 10}],
+        "PostToolUse": [{"type": "command", "command": cmd, "timeout": 10}]}}
     if path.is_file():
         data, _ = read_json(path)
         if data == want:
@@ -502,10 +546,12 @@ def plan_copilot_hook(exe: str) -> Change | None:
             return ch
         if data is not None and HOOK_MARK in json.dumps(data):
             ch.data = want
-            ch.servers.append("all tools (repair outdated hook command)")
+            ch.servers.append("all tools (add blocking for enforce mode)"
+                              if PRE not in json.dumps(data)
+                              else "all tools (repair outdated hook command)")
             return ch
     ch.data = want
-    ch.servers.append("all tools (built-in; MCP stays on the wrapped servers)")
+    ch.servers.append("all tools (built-in; blocks in enforce mode; MCP stays on the wrapped servers)")
     return ch
 
 
@@ -521,18 +567,18 @@ def plan_copilot_unhook() -> Change | None:
     return ch
 
 
-def _cursor_entries(data: dict) -> list:
+def _cursor_entries(data: dict, event: str = "postToolUse") -> list:
     hooks = data.get("hooks")
     if not isinstance(hooks, dict):
         return []
-    post = hooks.get("postToolUse")
-    return post if isinstance(post, list) else []
+    entries = hooks.get(event)
+    return entries if isinstance(entries, list) else []
 
 
 def plan_cursor_hook(exe: str) -> Change | None:
     """Cursor's built-in tools (read, edit, terminal) bypass MCP; its
-    postToolUse hook reports every one (ADR-040). The user's own hooks in the
-    same file are kept untouched."""
+    postToolUse hook reports every one (ADR-040) and preToolUse can stop one in
+    enforce mode (ADR-042). The user's own hooks in the same file are kept."""
     if not cursor_present():
         return None
     path = cursor_hooks_file()
@@ -548,19 +594,18 @@ def plan_cursor_hook(exe: str) -> Change | None:
     if not isinstance(hooks, dict):
         ch.error = "'hooks' in hooks.json is not an object — left untouched"
         return ch
-    post = hooks.setdefault("postToolUse", [])
-    ours = [h for h in post if isinstance(h, dict) and HOOK_MARK in str(h.get("command", ""))]
-    if ours and all(h.get("command") == want for h in ours):
+    a1, r1 = _ensure(hooks.setdefault("postToolUse", []), want, nested=False)
+    a2, r2 = _ensure(hooks.setdefault("preToolUse", []), f"{want} {PRE}", nested=False)
+    for event in ("postToolUse", "preToolUse"):
+        for h in hooks[event]:
+            if isinstance(h, dict) and _ours(h.get("command")):
+                h.pop("type", None)     # Cursor's own examples carry no type
+    what = _describe(a1, a2, r1 or r2, "built-in; MCP stays on the wrapped servers")
+    if not what:
         ch.skipped.append(("all tools", "already connected"))
         return ch
-    if ours:
-        for h in ours:
-            h["command"] = want
-        ch.servers.append("all tools (repair outdated hook command)")
-    else:
-        post.append({"command": want, "timeout": 10})
-        ch.servers.append("all tools (built-in; MCP stays on the wrapped servers)")
     ch.data = new
+    ch.servers.append(what)
     return ch
 
 
@@ -569,15 +614,17 @@ def plan_cursor_unhook() -> Change | None:
     if not path.is_file():
         return None
     data, _ = read_json(path)
-    if data is None or not any(HOOK_MARK in str((h or {}).get("command", ""))
-                               for h in _cursor_entries(data)):
+    if data is None or not any(_ours((h or {}).get("command"))
+                               for ev in ("postToolUse", "preToolUse")
+                               for h in _cursor_entries(data, ev)):
         return None
     new = json.loads(json.dumps(data))
-    kept = [h for h in _cursor_entries(new) if HOOK_MARK not in str((h or {}).get("command", ""))]
-    if kept:
-        new["hooks"]["postToolUse"] = kept
-    else:
-        new["hooks"].pop("postToolUse", None)
+    for ev in ("postToolUse", "preToolUse"):
+        kept = [h for h in _cursor_entries(new, ev) if not _ours((h or {}).get("command"))]
+        if kept:
+            new["hooks"][ev] = kept
+        else:
+            new["hooks"].pop(ev, None)
     if new.get("hooks") == {} and set(new) <= {"version", "hooks"}:
         ch = Change("Cursor (built-in tools)", "cursor", path, "remove")
     else:
@@ -591,21 +638,22 @@ def plan_unhook() -> Change | None:
     if not path.is_file():
         return None
     data, err = read_json(path)
-    if data is None or not has_hook(data):
+    if data is None or HOOK_MARK not in json.dumps(data.get("hooks") or {}):
         return None
     new = json.loads(json.dumps(data))
-    groups = []
-    for group in _hook_groups(new):
-        kept = [h for h in (group or {}).get("hooks") or []
-                if HOOK_MARK not in str((h or {}).get("command", ""))]
-        if kept:
-            groups.append({**group, "hooks": kept})
-    if groups:
-        new["hooks"]["PostToolUse"] = groups
-    else:
-        new["hooks"].pop("PostToolUse", None)
-        if not new["hooks"]:
-            new.pop("hooks")
+    for event in ("PostToolUse", "PreToolUse"):
+        groups = []
+        for group in _hook_groups(new, event):
+            kept = [h for h in (group or {}).get("hooks") or []
+                    if not _ours((h or {}).get("command"))]
+            if kept:
+                groups.append({**group, "hooks": kept})
+        if groups:
+            new["hooks"][event] = groups
+        else:
+            new["hooks"].pop(event, None)
+    if not new["hooks"]:
+        new.pop("hooks")
     ch = Change("Claude Code", CLAUDE_CODE, path, "unhook", data=new)
     ch.servers.append("all tools hook")
     return ch

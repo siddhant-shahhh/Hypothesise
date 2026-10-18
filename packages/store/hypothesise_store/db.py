@@ -59,8 +59,10 @@ def adopt_legacy_db(target: Path = DEFAULT_DIR / "hypothesise.db",
 
 def get_engine(url: str | None = None, echo: bool = False) -> Engine:
     url = url or os.environ.get("HYPOTHESISE_DB_URL") or DEFAULT_URL
-    if url == DEFAULT_URL and adopt_legacy_db():
-        print(f"hypothesise: brought over earlier data from {LEGACY_DB}")
+    # The pre-rename database is no longer adopted automatically (ADR-042): it
+    # only ever existed on development machines, where it was full of test
+    # runs, and copying it made a first launch look like someone else's data.
+    # `adopt_legacy_db()` stays for anyone who wants it explicitly.
 
     if url.startswith("sqlite"):
         in_memory = ":memory:" in url or url == "sqlite://"

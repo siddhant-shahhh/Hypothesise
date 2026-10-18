@@ -31,6 +31,19 @@ class Engine:
     trust: TrustStore = field(default_factory=TrustStore)
     rules: RuleSet = field(default_factory=RuleSet)
     learning: bool = False          # True = fold events into baselines, decide nothing
+    # Live learning (ADR-042): fold every clean, allowed call into this agent's
+    # baseline as it happens. Before this, baselines were only ever built by
+    # the test harness, so in real use every novelty detector stayed asleep.
+    online: bool = False
+
+    @classmethod
+    def live(cls, rules: RuleSet | None = None) -> Engine:
+        """The engine real traffic runs through: learns as it goes, and only
+        starts calling things novel after LIVE_MIN_EVENTS clean calls."""
+        from .baseline.model import LIVE_MIN_EVENTS
+
+        return cls(baselines=BaselineStore(activate_after=LIVE_MIN_EVENTS),
+                   rules=rules or RuleSet(), online=True)
 
     # -- evaluation ---------------------------------------------------------
 
@@ -94,15 +107,29 @@ class Engine:
         if rule is not None and ruled is not decision.verdict:
             decision.verdict = ruled
             note = describe(rule)
+            # The sentence a person reads first: what happened and why, in
+            # their own words from the rule. The pattern detail stays in the
+            # evidence row for whoever wants it.
+            said = (f"Blocked by your rule '{rule.name}'" if ruled is Verdict.BLOCK
+                    else f"Held for approval by your rule '{rule.name}'"
+                    if ruled is Verdict.ASK else f"Allowed by your rule '{rule.name}'")
+            said = f"{said}: {rule.reason}" if rule.reason else said
+            # Your rule leads: it is the reason the action stopped. Whatever
+            # the behaviour score said comes after, as context.
             decision.sentence = (
-                f"{ruled.value.title()} by {note}."
+                f"{said.rstrip('.')}."
                 if not decision.sentence
-                else f"{decision.sentence} Verdict set to {ruled.value} by {note}."
+                else f"{said.rstrip('.')}. Also: {decision.sentence}"
             )
             decision.detectors = [
                 *decision.detectors,
                 {"detector": "policy_rule", "weight": 0.0, "detail": note},
             ]
+
+        # Learn only from what passed cleanly: a flagged call must not become
+        # tomorrow's normal, which is how a slow attacker would teach the model.
+        if self.online and decision.verdict is Verdict.ALLOW and not signals:
+            baseline.observe(ev, history)
 
         self._grow_graph(ev)
         return decision, signals

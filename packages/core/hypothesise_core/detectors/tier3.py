@@ -10,7 +10,7 @@ comes from a *different agent's* history rather than this one's.
 
 from __future__ import annotations
 
-from ..events import Action, ResourceClass
+from ..events import ResourceClass
 from ..graph.model import (
     SENSITIVE_CLASSES,
     agent_node,
@@ -19,7 +19,7 @@ from ..graph.model import (
     tool_node,
 )
 from ..risk.model import Signal, Weight, effective_risk
-from .base import DetectorContext, tier2
+from .base import DetectorContext, is_external_egress, tier2
 
 # Distinct secrets in one session before the accumulation itself is the signal.
 SECRET_ACCUMULATION = 3
@@ -137,7 +137,7 @@ def egress_after_broad_access(ctx: DetectorContext) -> Signal | None:
     across sensitive resources before reaching out.
     """
     ev = ctx.event
-    if ev.action is not Action.EGRESS and ev.resource.cls is not ResourceClass.NETWORK_EGRESS:
+    if not is_external_egress(ev):
         return None
 
     prior = {

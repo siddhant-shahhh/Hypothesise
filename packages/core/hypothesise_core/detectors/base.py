@@ -107,6 +107,23 @@ def tier2(name: str) -> Callable[[Detector], Detector]:
     return wrap
 
 
+def is_external_egress(ev) -> bool:
+    """True only for a call that actually sends data off the network.
+
+    A `fetch`/`curl` tool pointed at localhost or a private address classifies
+    as UNKNOWN (an internal call), yet its tool name alone made `classify_action`
+    return EGRESS. The exfil detectors keyed on that action, so an ordinary
+    `.env` read followed by a `http://localhost/health` check fired
+    `sensitive_then_egress` (ADR-042). When a resource URI is present, the
+    CLASS is authoritative; the action-only path stays for egress with no URI.
+    """
+    from ..events import Action, ResourceClass
+
+    if ev.resource.cls is ResourceClass.NETWORK_EGRESS:
+        return True
+    return ev.action is Action.EGRESS and not ev.resource.uri
+
+
 def _run(registry: list[tuple[str, Detector]], ctx: DetectorContext) -> list[Signal]:
     out: list[Signal] = []
     for name, fn in registry:

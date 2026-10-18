@@ -9,8 +9,14 @@ so one receiver serves both (ADR-038).
 
 Constraints, all deliberate:
 
-* **Observe only.** Runs after the tool, decides nothing, prints nothing,
-  always exits 0. A hook that errors or blocks is a broken agent.
+* **Observe only after the tool.** The PostToolUse receiver runs after the
+  tool, decides nothing, prints nothing, always exits 0. A hook that errors
+  is a broken agent.
+* **Blocking only before the tool, only in enforce mode** (`--pre`, ADR-042).
+  In observe mode the pre-tool hook returns at once without loading the
+  engine. In enforce mode it blocks only on what cannot be a false alarm of
+  learned behaviour: your own protection rules, and the critical sequences
+  (secret then egress, shell exfiltration, retry after denial).
 * **Fast.** Standard library plus the pure engine's classifier; no database,
   no HTTP. The record goes to the local spool and the dashboard evaluates it
   later, with every other event from the same Claude session.
@@ -164,6 +170,125 @@ def build_event(payload: dict[str, Any], step: int,
         outcome=Outcome(status=Status(status), error=error),
     )
     return ev.to_dict()
+
+
+# Window of earlier calls the pre-tool hook reads back from the spool, so a
+# sequence (read .env, then curl) is visible to a process that lives for one
+# tool call. Bounded: the tail of today's spool file only.
+_HISTORY_BYTES = 512 * 1024
+_HISTORY_EVENTS = 50
+
+
+def _history(session: str) -> list[dict[str, Any]]:
+    from hypothesise_proxy.spool import spool_files
+
+    files = spool_files()
+    if not files:
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        with open(files[-1], "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - _HISTORY_BYTES))
+            tail = f.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return []
+    for line in tail[1:] if len(tail) > 1 else tail:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict) and rec.get("session_id") == session:
+            out.append(rec)
+    return out[-_HISTORY_EVENTS:]
+
+
+def _deny(client: str, sentence: str) -> int:
+    """Refuse the tool call in the shape each agent reads, and exit 2, which
+    all three treat as "block" even if they ignore the JSON."""
+    if client == "cursor":
+        print(json.dumps({"permission": "deny", "user_message": sentence,
+                          "agent_message": sentence}))
+    else:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "deny",
+            "permissionDecisionReason": sentence}}))
+    print(sentence, file=sys.stderr)
+    return 2
+
+
+def decide_pre(payload: dict[str, Any], client: str) -> tuple[dict[str, Any], str] | None:
+    """(event record, sentence) when this call must be blocked, else None."""
+    from hypothesise_core.engine import Engine
+    from hypothesise_core.events import Event, Outcome, Status, Verdict
+    from hypothesise_core.policy.rules import RuleSet
+    from hypothesise_core.policy.score import SHORT_CIRCUIT
+    from hypothesise_proxy import settings
+    from hypothesise_proxy.spool import next_step
+
+    _, prefix = CLIENTS.get(client, CLIENTS[AGENT])
+    session = f"{prefix}-{_session(payload)}"
+    record = build_event({**payload, "tool_response": None}, 0, client)
+    if record is None:
+        return None
+    engine = Engine(rules=RuleSet.from_config(settings.rules()))
+    window = engine.window_for(session)
+    for rec in _history(session):
+        try:
+            window.push(Event.from_dict(rec))
+        except (KeyError, TypeError, ValueError):
+            continue
+    ev = Event.from_dict(record)
+    import time
+
+    started = time.perf_counter()
+    decision, _ = engine.evaluate(ev)
+    decision.elapsed_ms = (time.perf_counter() - started) * 1000.0
+    if decision.verdict is not Verdict.BLOCK:
+        return None
+    fired = {d.get("detector") for d in decision.detectors}
+    # A fresh process has no baseline and no trust history, so only verdicts
+    # that need neither may block here: an explicit rule, or a critical
+    # sequence. Anything else would be a guess.
+    if "policy_rule" not in fired and not (fired & set(SHORT_CIRCUIT)):
+        return None
+    ev.step = next_step(session)
+    ev.outcome = Outcome(status=Status.BLOCKED)
+    ev.decision = decision
+    return ev.to_dict(), decision.sentence
+
+
+def run_pre(client: str = AGENT, stdin: Any = None) -> int:
+    """PreToolUse. Observe mode: say nothing, cost nothing. Enforce: block."""
+    try:
+        raw = (stdin or sys.stdin).read()
+        from hypothesise_proxy import settings
+
+        if settings.mode("observe") != "enforce":
+            if client == "cursor":
+                print("{}")
+            return 0
+        payload = json.loads(raw) if raw.strip() else {}
+        if not isinstance(payload, dict):
+            return 0
+        out = decide_pre(payload, client)
+        if out is None:
+            if client == "cursor":
+                print("{}")
+            return 0
+        record, sentence = out
+        from hypothesise_proxy import notify
+        from hypothesise_proxy.spool import append
+
+        append([record])
+        notify.blocked(sentence, record.get("agent_id", ""),
+                       f"{record['tool']['server']}/{record['tool']['name']}")
+        return _deny(client, sentence)
+    except Exception:  # noqa: BLE001 — fail open: a broken hook must not break the agent
+        if client == "cursor":
+            print("{}")
+        return 0
 
 
 def run(client: str = AGENT, stdin: Any = None) -> int:

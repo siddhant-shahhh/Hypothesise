@@ -5,7 +5,7 @@
 # before the first upload, because a public upload cannot be taken back.
 [project]
 name = "hypothesise"
-version = "0.1.0a3"
+version = "0.1.0a4"
 description = "Behavioural security layer for AI agents — watches every tool call your agents make, learns what normal looks like, and flags dangerous deviations"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -60,7 +60,49 @@ class ApprovalClient:
 
     # -- flow ---------------------------------------------------------------
 
+    async def _local(self, event, sentence: str) -> ApprovalOutcome | None:
+        """Ask on screen (ADR-042). None when this machine cannot show a dialog."""
+        from . import notify
+
+        loop = asyncio.get_running_loop()
+        answer = await loop.run_in_executor(
+            None, notify.ask, sentence, event.agent_id, event.tool.qualified, self.ttl)
+        if answer is None:
+            return None
+        if answer:
+            return ApprovalOutcome(True, "approved", detail="allowed by you on screen")
+        return ApprovalOutcome(False, "denied", detail="blocked by you on screen, or no answer")
+
     async def request(self, event, sentence: str) -> ApprovalOutcome:
+        """Ask on screen and on the dashboard at once; the first answer wins.
+
+        Either channel alone is enough. With neither, nobody can say yes, so
+        the answer is no (ADR-017)."""
+        tasks = {asyncio.ensure_future(self._local(event, sentence)): "screen"}
+        if self.api_url:
+            tasks[asyncio.ensure_future(self._remote(event, sentence))] = "dashboard"
+        pending = set(tasks)
+        result: ApprovalOutcome | None = None
+        while pending and result is None:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for t in done:
+                out = t.result()
+                # "could not ask" from one channel is not an answer; keep
+                # waiting for the other.
+                if out is not None and out.state != "unavailable":
+                    result = out
+                    break
+                if out is not None and result is None and not pending:
+                    result = out
+        for t in pending:
+            t.cancel()
+        if result is None:
+            return ApprovalOutcome(
+                approved=False, state="unavailable",
+                detail="no dashboard running and no way to ask on screen, so nobody could approve it")
+        return result
+
+    async def _remote(self, event, sentence: str) -> ApprovalOutcome:
         created = await self._call("/v1/approvals", {
             "event_id": event.event_id,
             "ttl_seconds": int(self.ttl),
